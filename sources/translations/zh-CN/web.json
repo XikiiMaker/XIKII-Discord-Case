@@ -1,0 +1,37 @@
+{
+  "offline": {
+    "title": "无法连接 Discord 服务。",
+    "description": "请检查网络连接后重试。"
+  },
+  "aboutWindow": {
+    "nav": {
+      "about": "关于",
+      "credits": "致谢",
+      "licenses": "许可证"
+    },
+    "about": {
+      "appDescription": "基于 WebCord 的 Discord 中英双向翻译客户端。",
+      "appRepo": "GitHub 项目仓库",
+      "featuresTitle": "构建选项",
+      "featuresDefault": "默认",
+      "checksumTitle": "文件校验值"
+    },
+    "credits": {
+      "people": {
+        "author": "原项目作者、维护者和主要开发者。",
+        "contributors": {
+          "default": "代码贡献者。"
+        }
+      }
+    },
+    "licenses": {
+      "appLicenseTitle": "客户端许可证",
+      "appLicenseBody": "%s 是自由软件：你可以根据 MIT 许可证使用、修改和重新分发。分发时请附带软件许可证。",
+      "showLicense": "查看许可证",
+      "thirdPartyLicensesTitle": "第三方软件许可证",
+      "thirdPartyLicensesBody": "%s 使用了以下第三方软件：",
+      "licensedUnder": "采用 %s 许可证",
+      "packageAuthors": "%s 的作者"
+    }
+  }
+}

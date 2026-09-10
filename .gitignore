@@ -1,12 +1,27 @@
-node_modules/
-dist/
-build/
+# Ignore build / packaging artifacts
 out/
-coverage/
-*.log
+app/
+cache/
+# Ignore Node package managers artifacts
+node_modules/
+# Ignore foreign lockfiles
+*lock*
+!package-lock.json
+# Ignore hidden dirs with some exceptions
+# (these are likely used by text editors)
+.*/
+# GitHub – workflows, templates, configs etc.
+!.github/
+# Husky – Git hooks implementation 
+!.husky/
+.husky/_/
+
+# XIKII: never commit keys or local translation data.
 .env
 .env.*
 !.env.example
-*.tsbuildinfo
-.DS_Store
-Thumbs.db
+*.log
+translation.json
+translation.json.tmp
+coverage/
+

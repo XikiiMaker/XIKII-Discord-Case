@@ -1,0 +1,121 @@
+{
+    "tray": {
+        "quit": "Sair",
+        "toggle": "Alternar",
+        "mention": {
+            "other": "Menções",
+            "one": "Menção"
+        }
+    },
+    "context": {
+        "copy": "Copiar",
+        "paste": "Colar",
+        "cut": "Cortar",
+        "dictionaryAdd": "Adicionar ao dicionário local",
+        "copyURL": "Copiar link",
+        "copyURLText": "Copiar o texto do link",
+        "inspectElement": "Inspecionar",
+        "copyImage": "Copiar imagem",
+        "copyImageURL": "Copiar link para a imagem"
+    },
+    "menubar": {
+        "file": {
+            "groupName": "Arquivo",
+            "quit": "Sair",
+            "relaunch": "Reiniciar",
+            "addon": {
+                "groupName": "Extensões",
+                "loadNode": "Carregar extensão node",
+                "loadChrome": "Carregar extensão do Chrome"
+            }
+        },
+        "view": {
+            "reload": "Recarregar",
+            "groupName": "Ver",
+            "forceReload": "Forçar recarregamento",
+            "devTools": "Alternar ferramentas de desenvolvedor",
+            "resetZoom": "Tamanho atual",
+            "zoomIn": "Mais zoom",
+            "zoomOut": "Menos zoom",
+            "fullScreen": "Alternar tela cheia"
+        },
+        "window": {
+            "groupName": "Janela",
+            "mobileMode": "Ocultar barra lateral"
+        },
+        "enabled": "Habilitado",
+        "edit": {
+            "groupName": "Editar",
+            "undo": "Desfazer",
+            "redo": "Refazer",
+            "selectAll": "Selecionar todos"
+        }
+    },
+    "dialog": {
+        "common": {
+            "source": "Fonte",
+            "error": "Erro",
+            "warning": "Aviso",
+            "continue": "&Continuar",
+            "yes": "&Sim",
+            "no": "&Não"
+        },
+        "ver": {
+            "update": "Nova versão do aplicativo está disponível!",
+            "updateTitle": "Atualização disponível!",
+            "recent": "Aplicativo já está na ultima versão!",
+            "devel": "Você está utilizando uma versão de desenvolvimento.",
+            "updateBadge": "[ATUALIZAR]",
+            "downgrade": "Sua versão é mais recente que a estável!"
+        },
+        "permission": {
+            "request": {
+                "denied": "%s: Permissão para %s negada."
+            },
+            "check": {
+                "denied": "%s: Verificação de permissão para %s negada."
+            },
+            "question": {
+                "title": "Manipulador de solicitações de permissão",
+                "message": "Você deseja conceder ao Discord acesso ao %s?",
+                "video": "câmera",
+                "audio": "microfone",
+                "notifications": "notificações"
+            }
+        },
+        "mod": {
+            "nodeExt": "Complemento Node.js para o Webcord",
+            "crx": "Extensão Chrome/Chromium"
+        },
+        "externalApp": {
+            "title": "Abrindo link em um aplicativo externo",
+            "message": "Um site tentou redirecionar o link para uma aplicação externa. Continuar mesmo assim?"
+        },
+        "screenShare": {
+            "close": "Fechar",
+            "sound": {
+                "unavailable": "Compartilhamento de audio não está disponível nessa plataforma.",
+                "system": "Compartilhar com áudio do dispositivo."
+            },
+            "source": {
+                "entire": "Tela do computador",
+                "screen": "Tela"
+            }
+        }
+    },
+    "windows": {
+        "settings": "Configurações",
+        "about": "Sobre",
+        "docs": "Documentação",
+        "invite": "Convidar"
+    },
+    "help": {
+        "groupName": "Ajuda",
+        "repo": "Repositório",
+        "bugs": "Reportar um bug"
+    },
+    "log": {
+        "singleInstance": "Alternando para a janela existente...",
+        "listenPort": "Escutando na porta %s."
+    }
+}

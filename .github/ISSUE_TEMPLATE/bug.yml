@@ -1,0 +1,28 @@
+name: 问题反馈
+description: 报告 XIKII Discord Case 的使用问题
+body:
+  - type: markdown
+    attributes:
+      value: 请勿上传 API Key、登录数据或真实聊天记录。翻译复现请使用人工测试文字。
+  - type: input
+    id: version
+    attributes:
+      label: 客户端版本与操作系统
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 预期与实际行为
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 日志或截图（请先移除敏感信息）

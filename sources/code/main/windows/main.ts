@@ -1,0 +1,594 @@
+import { EventEmitter } from "events";
+import { resolve } from "path";
+
+import kolor from "@spacingbat3/kolor";
+
+import { appInfo, getBuildInfo } from "../../common/modules/client";
+import { AppConfig, appConfig, WinStateKeeper } from "../modules/config";
+import {
+  app,
+  dialog,
+  BrowserWindow,
+  net,
+  ipcMain,
+  desktopCapturer,
+  WebContentsView,
+  systemPreferences
+} from "electron/main";
+import * as getMenu from "../modules/menu";
+import { fonts, knownInstancesList } from "../../common/global";
+import packageJson from "../../common/modules/package";
+import { getWebCordCSP } from "../modules/csp";
+import L10N from "../../common/modules/l10n";
+import { loadChromiumExtensions, styles } from "../modules/extensions";
+import { commonCatches } from "../modules/error";
+import { attachTranslation } from "../translation/ipc";
+import { unreadFromTitle, shouldFlash } from "../../common/desktop";
+
+import type { PartialRecursive } from "../../common/global";
+import { nativeImage } from "electron/common";
+import { satisfies as rSatisfies } from "semver";
+import { existsSync } from "fs";
+import { format } from "util"
+
+type MainWindowFlags = [
+  startHidden: boolean
+];
+
+const headerCallback: Parameters<Electron.WebRequest["onHeadersReceived"]>[0] = (details, callback) => {
+  const {cspThirdParty} = appConfig.value.settings.advanced;
+  const responseHeaders = details.responseHeaders??{};
+  responseHeaders["Content-Security-Policy"] = [getWebCordCSP(cspThirdParty).build()];
+  callback({ responseHeaders });
+}
+
+export default function createMainWindow(...flags:MainWindowFlags): BrowserWindow {
+  const l10nStrings = new L10N().client;
+  // Never hide a startup window when the tray is unavailable.
+  flags[0] = flags[0] && !appConfig.value.settings.general.tray.disable;
+
+  const internalWindowEvents = new EventEmitter();
+
+  // Check the window state
+
+  const mainWindowState = new WinStateKeeper("mainWindow");
+
+  // Browser window
+
+  const win = new BrowserWindow({
+    title: app.getName(),
+    minWidth: appInfo.minWinWidth,
+    minHeight: appInfo.minWinHeight,
+    height: mainWindowState.initState.height,
+    width: mainWindowState.initState.width,
+    backgroundColor: appInfo.backgroundColor,
+    transparent: appConfig.value.settings.general.window.transparent,
+    show: false,
+    webPreferences: {
+      preload: resolve(app.getAppPath(), "app/code/renderer/preload/main.js"),
+      nodeIntegration: false, // Never set to "true"!
+      contextIsolation: true, // Isolates website from preloads.
+      sandbox: false, // Removes Node.js from preloads (TODO).
+      devTools: true, // Allows the use of the devTools.
+      defaultFontFamily: fonts,
+      enableWebSQL: false,
+      webgl: appConfig.value.settings.advanced.webApi.webGl,
+      safeDialogs: true, // prevents dialog spam by the website
+      autoplayPolicy: "no-user-gesture-required"
+    },
+    ...(process.platform !== "win32" ? {icon: appInfo.icons.app} :
+      existsSync(resolve(app.getAppPath(),"sources/assets/icons/app.ico")) ?
+        {icon: resolve(app.getAppPath(),"sources/assets/icons/app.ico")} : {}),
+  });
+  attachTranslation(win);
+  win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+    if (errorCode <= -100 && errorCode >= -199)
+    // Show offline page on connection errors.
+      void win.loadFile(resolve(app.getAppPath(), "sources/assets/web/html/404.html"));
+    else if (errorCode === -30) {
+      // Ignore CSP errors.
+      console.warn(kolor.bold("[WARN]")+' A page "'+validatedURL+'" was blocked by CSP.');
+      return;
+    }
+    console.error(kolor.bold("[ERROR]")+" "+errorDescription+" ("+(errorCode*-1).toString()+")");
+    const retry = setInterval(() => {
+      if (net.isOnline()) {
+        clearInterval(retry);
+        void win.loadURL(knownInstancesList[appConfig.value.settings.advanced.currentInstance.radio][1].href);
+      }
+    }, 1000);
+  });
+  win.webContents.once("did-finish-load", () => {
+    console.debug("[PAGE] Starting to load the Discord page...");
+    if (!flags[0]) win.show();
+    setTimeout(() => {void win.loadURL(knownInstancesList[appConfig.value.settings.advanced.currentInstance.radio][1].href);}, 1500);
+  });
+  if (mainWindowState.initState.isMaximized)
+    if(!flags[0] || win.isVisible())
+      win.maximize();
+    else
+      win.once("show", () => win.maximize());
+
+  // CSP
+  if(appConfig.value.settings.advanced.csp.enabled)
+    win.webContents.session.webRequest.onHeadersReceived(headerCallback);
+
+  win.webContents.session.webRequest.onBeforeRequest(
+    {
+      urls: [
+        "https://*/cdn-cgi/**",
+        "https://*/assets/sentry.*.js",
+        "https://*/api/*/science",
+        "https://*/api/*/channels/*/typing",
+        "https://*/api/*/track"
+      ]
+    },
+    (details, callback) => {
+      const {
+        science,
+        sentry,
+        fingerprinting,
+        typingIndicator
+      } = appConfig.value.settings.privacy.blockApi;
+      /** Parsed URL of the request. */
+      const url = new URL(details.url);
+      if (science || typingIndicator || fingerprinting)
+        console.debug("[API] Blocking " + url.pathname);
+      if (url.pathname.endsWith("/science") || url.pathname.endsWith("/track"))
+        callback({ cancel: science });
+      else if(/\/assets\/sentry\..*.js$/.test(url.pathname))
+        callback({ cancel: sentry });
+      else if (url.pathname.endsWith("/typing"))
+        callback({ cancel: typingIndicator });
+      else if (url.pathname.endsWith("/api.js") || url.pathname.startsWith("/cdn-cgi/"))
+        callback({ cancel: fingerprinting });
+      else
+        callback({ cancel: false });
+    },
+  );
+  // (Device) permissions check/request handlers:
+  {
+    /** List of domains, urls or protocols accepted by permission handlers. */
+    const trustedURLs = [
+      knownInstancesList[appConfig.value.settings.advanced.currentInstance.radio][1].origin,
+      "devtools://"
+    ];
+    const supportsMediaAccessStatus = ["darwin","win32"].includes(process.platform);
+    const getMediaTypesPermission = (mediaTypes: unknown[] = []) => {
+      if(mediaTypes.length === 0)
+        return (supportsMediaAccessStatus ?
+          systemPreferences.getMediaAccessStatus("screen") === "granted" :
+          true
+        ) && appConfig.value.settings.privacy.permissions["display-capture"];
+      return [...new Set(mediaTypes)]
+        .map(media => {
+          const mediaType = media === "video" ? "camera" : media === "audio" ? "microphone" : null;
+          return mediaType !== null ? (
+            supportsMediaAccessStatus ?
+              systemPreferences.getMediaAccessStatus(mediaType) === "granted" :
+              true
+          ) : null;
+        })
+        .reduce((previousValue,currentValue) => (previousValue??false) && (currentValue??false))??true;
+    };
+    type handlerParamType<H extends "request"|"check"> = Parameters<Exclude<Parameters<Electron.Session[`setPermission${Capitalize<H>}Handler`]>[0],null>>;
+    /** Common handler for  */
+    const permissionHandler = <T extends "request"|"check">(kind:T,webContentsUrl:string, permission:string, details:handlerParamType<T>[3]) => {
+      const perms = appConfig.value.settings.privacy.permissions;
+      // Verify URL address of the permissions.
+      try {
+        const webContents = new URL(webContentsUrl);
+        if(webContents.origin !== trustedURLs[0] && webContents.protocol !== trustedURLs[1]) {
+          console.debug("[PERM]: Origin of request for '%s' not trusted.", permission);
+          return false;
+        }
+      } catch {
+        // Deny invalid URLs (and show warning).
+        return null;
+      }
+      switch (permission) {
+        case "media":{
+          let callbackValue = true;
+          if("mediaTypes" in details) {
+            callbackValue = getMediaTypesPermission(details.mediaTypes);
+            for(const type of new Set(details.mediaTypes))
+              if(!callbackValue)
+                break;
+              else
+                callbackValue = perms[type]??false;
+          }
+          else if("mediaType" in details && details.mediaType !== "unknown")
+            callbackValue = getMediaTypesPermission([details.mediaType]) && (
+              perms[details.mediaType]??false
+            );
+          else
+            // By default, unknown media typed request will resolve to true
+            // only if user explicitly grants every permission related to it
+            // to WebCord. Should be great middle-ground when stuff breaks
+            // while keeping everything privacy-oriented.
+            callbackValue = (perms.audio && perms.video && perms["display-capture"]) === true;
+          if(!callbackValue)
+            console.debug(`[PERM]: Permission ${kind} denied for 'media'.`);
+          return callbackValue;
+        }
+        case "notifications":
+        case "fullscreen":
+        case "background-sync":
+        case "speaker-selection":
+        case "clipboard-sanitized-write":
+          return perms[permission]??false;
+        default:
+          return null;
+      }
+    };
+    win.webContents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+      if (permission === "notifications" && (!details.isMainFrame || requestingOrigin !== trustedURLs[0])) return false;
+      const requestUrl = (webContents !== null && webContents.getURL() !== "" ? webContents.getURL() : requestingOrigin);
+      const returnValue = permissionHandler("check",requestUrl,permission,details);
+      if(returnValue === null) {
+        console.warn(
+          `[${l10nStrings.dialog.common.warning.toLocaleUpperCase()}] ${l10nStrings.dialog.permission.check.denied}`,
+          new URL(requestUrl),
+          permission
+        );
+        return false;
+      }
+      return returnValue;
+    });
+    win.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      if (permission === "notifications") {
+        try {
+          if (!details.isMainFrame || new URL(details.requestingUrl).origin !== trustedURLs[0]) { callback(false); return; }
+        } catch { callback(false); return; }
+      }
+      type nullPermissions = "video"|"audio"|"notifications";
+      const dialogLock = new Set<nullPermissions>();
+      async function permissionDialog(perm:nullPermissions) {
+        if(dialogLock.has(perm)) return false;
+        dialogLock.add(perm);
+        const {response} = await dialog.showMessageBox(win,{
+          type: "question",
+          title: l10nStrings.dialog.permission.question.title,
+          message: l10nStrings.dialog.permission.question.message.replace("%s", l10nStrings.dialog.permission.question[perm]),
+          buttons: [l10nStrings.dialog.common.no, l10nStrings.dialog.common.yes],
+          defaultId: 0,
+          cancelId: 0,
+          normalizeAccessKeys: true
+        });
+        dialogLock.delete(perm);
+        const value = response === 1;
+        const config = appConfig.value;
+        config.settings.privacy.permissions[perm] = value;
+        appConfig.value = config;
+        return value;
+      }
+      const returnValue = permissionHandler("request",webContents.getURL(), permission, details);
+      switch(returnValue) {
+        // WebCord does not recognize the permission – it should be denied.
+        case null:
+          console.warn(`[${l10nStrings.dialog.common.warning.toLocaleUpperCase()}] ${l10nStrings.dialog.permission.request.denied}`, webContents.getURL(), permission);
+          callback(false);
+          break;
+        // Both WebCord and system allows for the permission.
+        case true:
+          callback(true);
+          break;
+        // Either WebCord or system denies the request.
+        default:
+          if(permission === "media") {
+            const mediaTypes = "mediaTypes" in details ? details.mediaTypes : undefined;
+            const promises:Promise<boolean>[] = [];
+            (["camera","microphone"] as const).forEach(media => {
+              const kind = media === "camera" ? "video" : "audio";
+              if(!(mediaTypes?.includes(kind)??false))
+                return;
+              // macOS: try asking for media access whenever possible.
+              if(process.platform === "darwin" && systemPreferences.getMediaAccessStatus(media) === "not-determined")
+                promises.push(systemPreferences.askForMediaAccess(media));
+              // any: Ask user for permission if it is set to "null"
+              if(appConfig.value.settings.privacy.permissions[kind] === null)
+                promises.push(permissionDialog(kind));
+              else
+                promises.push(Promise.resolve(appConfig.value.settings.privacy.permissions[kind]??false));
+            });
+            if(promises.length === 0)
+              Promise.all(promises)
+                // Re-check permissions and return their values.
+                .then(dialogs => dialogs.reduce((prev,cur) => prev && cur, true))
+                .then(result => result && getMediaTypesPermission(mediaTypes))
+                .then(result => callback(result))
+                // Deny on failure.
+                .catch(() => callback(false));
+            else
+              // Deny if no changes were done.
+              callback(false);
+            break;
+          } else if(permission === "notifications" && appConfig.value.settings.privacy.permissions.notifications === null)
+            permissionDialog(permission)
+              .then(value => callback(value))
+              .catch(() => callback(false));
+          else
+            callback(false);
+          break;
+      }
+    });
+  }
+  void win.loadFile(resolve(app.getAppPath(), "sources/assets/web/html/load.html"));
+  if (process.platform !== "darwin") win.removeMenu();
+  // Add English to the spellchecker
+  if(process.platform !== "darwin") {
+    let valid = true;
+    const spellCheckerLanguages = [app.getLocale(), "en-US"];
+    if (app.getLocale() === "en-US") valid = false;
+    if (valid) for (const language of spellCheckerLanguages)
+      if (!win.webContents.session.availableSpellCheckerLanguages.includes(language))
+        valid = false;
+    if (valid)
+      win.webContents.session.setSpellCheckerLanguages(spellCheckerLanguages);
+  }
+
+  // Keep window state
+  mainWindowState.watchState(win);
+
+  // Close children on hide.
+  win.on("hide", () => win.getChildWindows().forEach(child => child.close()));
+
+  // Load all menus:
+  getMenu.context(win);
+  const tray = !appConfig.value.settings.general.tray.disable ? getMenu.tray(win) : null;
+  if(typeof packageJson.data.repository === "object")
+    getMenu.bar(packageJson.data.repository.url, win);
+  else
+    throw new TypeError("'repository' in package.json is not of type 'object'.");
+
+  let lastUnread: string | boolean | undefined;
+  win.on("focus", () => win.flashFrame(false));
+  const pluralRules = new Intl.PluralRules();
+  // Window Title & "red dot" icon feature
+  win.on("page-title-updated", (event, title) => {
+    event.preventDefault();
+    if (title.includes("|")) {
+      // Wrap new title style!
+      const sections = title.split("|");
+      const [dirty,client,section,group] = [
+        unreadFromTitle(title),
+        app.getName(),
+        sections[1]?.trim() ?? "",
+        sections[2]?.trim() ?? null
+      ];
+      // Fetch status for ping and title from current title
+      win.setTitle((typeof dirty === "string" ? `[${dirty}] ` : dirty ? "*" : "") + client + " - " + section + (group !== null ? " (" + group + ")" : ""));
+      if (typeof dirty !== "string" || win.isFocused() || !appConfig.value.settings.general.taskbar.flash) win.flashFrame(false);
+      else if (shouldFlash(dirty, lastUnread, appConfig.value.settings.general.taskbar.flash, win.isFocused())) win.flashFrame(true);
+      if (dirty === lastUnread) return;
+      lastUnread = dirty;
+      if (!tray) return;
+      // Set tray icon and taskbar flash
+      let icon: Electron.NativeImage, tooltipSuffix="";
+      switch(typeof dirty) {
+        case "string":
+          icon = appInfo.icons.tray.warn;
+          tooltipSuffix=` - ${dirty} ${l10nStrings.tray.mention[pluralRules.select(parseInt(dirty))]}`;
+          break;
+        case "boolean":
+          icon = appInfo.icons.tray[dirty ? "unread" : "default"];
+          break;
+      }
+      // Resize icon on MacOS when its height is longer than 22 pixels.
+      if(process.platform === "darwin" && icon.getSize().height > 22)
+        icon = icon.resize({height:22});
+      tray.setImage(icon);
+      tray.setToolTip(`${app.getName()}${tooltipSuffix}`);
+    }
+    else if (title.includes("Discord") && !/[0-9]+/.test(win.webContents.getURL()))
+      win.setTitle(title.replace("Discord",app.getName()));
+    else
+      win.setTitle(app.getName() + " - " + title);
+  });
+
+  // Insert custom css styles:
+
+  win.webContents.on("did-navigate", () => {
+    if(new URL(win.webContents.getURL()).protocol === "https:") {
+      styles.load(win.webContents)
+        .catch(commonCatches.print);
+      import("fs")
+        .then(fs => fs.promises.readFile)
+        .then(read => read(resolve(app.getAppPath(), "sources/assets/web/css/discord.css")))
+        .then(buffer => buffer.toString())
+        .then(data => win.webContents.insertCSS(data))
+        .catch(commonCatches.print);
+      // Additionally, make window transparent if user has opted for it.
+      if(appConfig.value.settings.general.window.transparent)
+        win.webContents.once("did-stop-loading", () => win.setBackgroundColor("#0000"));
+    }
+  });
+
+  // Inject desktop capturer and block getUserMedia.
+  ipcMain.on("api-exposed", (_event, api:unknown) => {
+    if(typeof api !== "string") return;
+    console.debug("[IPC] Replace and spoof `getUserMedia` to block unauthorized screen sharing.");
+    const functionString = `{
+      const media = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      navigator.mediaDevices.getUserMedia = Function.prototype.call.apply(Function.prototype.bind, [(constrains) => {
+        if(constrains?.audio?.mandatory || constrains?.video?.mandatory)
+          return Promise.reject(new DOMException("Invalid state.", "NotAllowedError"));
+        return media(constrains);
+      }]);
+      Object.defineProperty(navigator.mediaDevices.getUserMedia, "name", {value: "getUserMedia"});
+    }`;
+    win.webContents.executeJavaScript(`${functionString};0`)
+      .then(() => internalWindowEvents.emit("api", api.replaceAll("'","\\'")))
+      .catch(commonCatches.throw);
+  });
+
+  // Apply settings that doesn't need app restart on change
+  ipcMain.on("settings-config-modified", (event, object:null|PartialRecursive<AppConfig>) => {
+    if(event.senderFrame && new URL(event.senderFrame.url).protocol !== "file:")
+      return;
+    try {
+      // Custom Discord instance switch
+      if(object?.settings?.advanced?.currentInstance?.radio !== undefined) {
+        void win.loadURL(knownInstancesList[appConfig.value.settings.advanced.currentInstance.radio][1].href);
+      }
+      // CSP
+      if(object?.settings?.advanced?.cspThirdParty !== undefined ||
+          object?.settings?.advanced?.csp !== undefined) {
+        win.webContents.session.webRequest.onHeadersReceived(
+          object.settings.advanced.csp?.enabled ? headerCallback : null
+        );
+        win.reload();
+      }
+      // Remove window flashing when it is disabled
+      if(object?.settings?.general?.taskbar?.flash === false)
+        win.flashFrame(false);
+    } catch(error) {
+      commonCatches.print(error);
+    }
+  });
+
+  // Load extensions for builds of type "devel".
+  if(getBuildInfo().type === "devel")
+    void loadChromiumExtensions(win.webContents.session);
+
+  /**
+   * Limitations for APIs to allow running WebCord properly with different
+   * Electron releases.
+   */
+  const apiGuard = Object.freeze({
+    capturer: rSatisfies(process.versions.electron,"<22.0.0 || >=26.0.0"),
+    unixAudioSharing: Number(process.versions.electron.split(".")[0])>=29
+  });
+
+  /** Determines whenever another request to desktopCapturer is processed. */
+  let lock = false;
+
+  win.webContents.session.setDisplayMediaRequestHandler((req, callback) => {
+    const checkStatus =
+      // Handle lock and check for a presence of another BrowserView.
+      lock || win.contentView.children.length !== 0 ||
+      // Fail when client has denied the permission to the capturer.
+      (
+        appConfig.value.settings.privacy.permissions["display-capture"] &&
+        process.platform === "darwin" ?
+          systemPreferences.getMediaAccessStatus("screen") === "granted" :
+          true
+      ) ||
+      // Fail on different frame
+      req.frame?.routingId !== win.webContents.mainFrame.routingId ||
+      // Whenever user is the one who most likely triggered this
+      req.userGesture;
+
+    if (!checkStatus) {
+      // Note: null is also valid according to Electron docs
+      callback(null as unknown as Electron.Streams);
+      return;
+    }
+
+    lock = !app.commandLine.getSwitchValue("enable-features")
+      .includes("WebRTCPipeWireCapturer") ||
+      process.env["XDG_SESSION_TYPE"] !== "wayland" ||
+      process.platform === "win32";
+
+    const srcPromise = lock || apiGuard.capturer ?
+      // Use desktop capturer where it doesn't crash.
+      desktopCapturer.getSources({
+        types: ["screen", "window"],
+        fetchWindowIcons: lock,
+        thumbnailSize: lock ? {width: 150, height: 150 } : {width: 0, height: 0}
+      // Workaround #328: Segfault on `desktopCapturer.getSources()` since Electron 22
+      }) : Promise.resolve([{
+        id: "screen:1:0",
+        appIcon: nativeImage.createEmpty(),
+        display_id: "",
+        name: "Entire Screen",
+        thumbnail: nativeImage.createEmpty()
+      } satisfies Electron.DesktopCapturerSource]);
+    if (lock) {
+      const view = new WebContentsView({
+        webPreferences: {
+          preload: resolve(app.getAppPath(), "app/code/renderer/preload/capturer.js"),
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: false,
+          enableWebSQL: false,
+          transparent: true,
+          webgl: false,
+          autoplayPolicy: "user-gesture-required"
+        }
+      });
+      ipcMain.handleOnce("getDesktopCapturerSources", async (event) => {
+        if (event.sender === view.webContents)
+          return await srcPromise;
+        else
+          return null;
+      });
+      const autoResize = () => setImmediate(() => view.setBounds({
+        ...win.getBounds(),
+        x: 0,
+        y: 0,
+      }));
+      ipcMain.handleOnce("capturer-get-settings", () => {
+        return appConfig.value.screenShareStore;
+      });
+      ipcMain.once("closeCapturerView", (_event, data: Electron.Streams) => {
+        win.contentView.removeChildView(view);
+        view.webContents.delete();
+        win.removeListener("resize", autoResize);
+        ipcMain.removeHandler("capturer-get-settings");
+        callback(data);
+        lock = false;
+      });
+      win.contentView.addChildView(view);
+      void view.webContents.loadFile(resolve(app.getAppPath(), "sources/assets/web/html/capturer.html"));
+      view.webContents.once("did-finish-load", () => {
+        autoResize();
+        win.on("resize", autoResize);
+      });
+    } else srcPromise.then(sources => {
+      let allowAudioSharing = false;
+      // FIXME: L10N
+      if (apiGuard.unixAudioSharing) allowAudioSharing = dialog.showMessageBoxSync(win, {
+        message: format(l10nStrings.dialog.permission.question.message, l10nStrings.dialog.permission.question.systemAudio),
+        title: "Wayland: "+l10nStrings.dialog.permission.question.title,
+        buttons: [l10nStrings.dialog.common.yes, l10nStrings.dialog.common.no],
+        type: "question",
+        normalizeAccessKeys: true,
+        cancelId: 1,
+        defaultId: 1
+      }) == 0;
+      if (sources[0]) callback({
+        video: sources[0],
+        ...(allowAudioSharing ? { audio: "loopback" } : {})
+      }); else callback(null as unknown as Electron.Streams);
+    }).catch(async (error: unknown) => {
+      if (error === "Failed to get sources.") {
+        if((await dialog.showMessageBox({
+          title: "Wayland: Caught Electron bug",
+          message: [
+            "Looks like you've canceled the the screen share!",
+            "While this is fine, Electron has a bug that might not",
+            "let you share screen unless Discord will be reloaded.",
+            "Do you want to do this now?"
+          ].join(" "),
+          buttons: [l10nStrings.dialog.common.yes, l10nStrings.dialog.common.no],
+          cancelId: 1,
+          defaultId: 0,
+          type: "question",
+          normalizeAccessKeys: true
+        })).response == 0) win.reload();
+      } else commonCatches.print(error);
+    });
+  },{ useSystemPicker: true });
+
+  // IPC events validated by secret "API" key and sender frame.
+  internalWindowEvents.on("api", (safeApi:string) => {
+    ipcMain.removeAllListeners("paste-workaround");
+    ipcMain.on("paste-workaround", (event, api:unknown) => {
+      if(safeApi !== api || event.senderFrame?.url !== win.webContents.getURL()) return;
+      console.debug("[Clipboard] Applying workaround to the image...");
+      win.webContents.paste();
+    });
+  });
+  return win;
+}
