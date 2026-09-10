@@ -11,9 +11,9 @@
 
 ## 当前状态
 
-项目初始化：已整理需求，尚未导入 WebCord 源码或实现翻译功能。xikii 内部参考模块尚未提供，不能将计划复用的能力视为已完成。
+已导入 WebCord，完成翻译首版代码及模拟联调。已移植 xikii 会员系统聊天 Prompt，并新增本地缓存和上下文管理。真实 Discord 页面适配、真实 Qwen 调用和安装包仍待验证。
 
-详细范围和优先级见 [项目需求书](docs/requirements.md)。
+详细范围见 [项目需求书](docs/requirements.md)、[已确认需求与进度](docs/implementation-plan.md)、[验证记录](docs/validation.md) 和 [上游来源](docs/upstream.md)。
 
 ## 计划架构
 
@@ -35,4 +35,18 @@ API Key 仅供主进程使用，不向 Discord 页面暴露，不提交到 Git�
 3. UI 与设置：完成密钥配置、目标语言、私信默认行为及频道开关。
 4. 增强与优化：上下文、预览、快捷键、流式响应、降级和性能验证。
 
-本仓库尚无可运行应用；构建、启动及测试命令将在导入上游后补充。
+## 本地开发
+
+建议 Node.js 24，首次安装：
+
+```powershell
+npm ci
+# 若 Electron 二进制尚未安装：
+node node_modules/electron/install.js
+npm test
+npm start
+```
+
+从客户端「文件 → 设置 → 翻译设置」选择地域、模型，保存本机 API Key 并确认启用。自动发送默认关闭；开启后翻译完成自动发送。上下文默认关闭。输入区域支持本会话开关、目标语言选择和译文预览。
+
+`npm run test:electron` 运行完全本地的模拟联调，不发送真实消息。当前保留上游图标，尚未制作 XIKII 品牌图标和正式安装包。

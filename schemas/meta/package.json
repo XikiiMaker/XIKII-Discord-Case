@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "JSON schema for Electron package.json files",
+  "properties": {
+    "productName": {
+      "type": "string",
+      "description": "User friendly name of this Electron application."
+    },
+    "config": {
+      "properties": {
+        "forge": {
+          "type":"string",
+          "description": "Path to Electron Forge configuration",
+          "not": {
+            "pattern": "^/|^\\.\\./|^[A-Z]:(?:/|\\\\)"
+          }
+        }
+      }
+    }
+  },
+  "allOf": [{ "$ref": "https://www.schemastore.org/package.json" }]
+}

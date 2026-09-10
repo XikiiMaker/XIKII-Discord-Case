@@ -1,0 +1,22 @@
+root = true
+
+[*]
+insert_final_newline = false
+
+[.*{rc,config,ignore,attributes}]
+charset = utf-8
+trim_trailing_whitespace = true
+end_of_line = lf
+
+[*.{ts,json}]
+charset = utf-8
+trim_trailing_whitespace = true
+end_of_line = lf
+indent_size = 2
+indent_style = space
+
+[package{,-lock}.json]
+insert_final_newline = true
+
+[tsconfig.json]
+indent_size = 4
