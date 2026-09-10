@@ -60,3 +60,7 @@ npm run test:electron
 ```
 
 下载依赖遇到网络问题时，按本机已有代理为当前终端配置 `HTTPS_PROXY` / `HTTP_PROXY`；Electron 下载还可能需要 `ELECTRON_GET_USE_PROXY=1`。不要把代理账号、API Key 或登录数据写入仓库。
+
+## 0.1.3 安装修复
+
+新增安装生命周期回归测试：首次运行继续启动、安装/更新创建快捷方式、卸载移除本项目启动项、旧版本退出不清理新版本入口、异常目录及 updater 错误/超时返回失败。47 项 Node/DOM 测试，TypeScript 与 oxlint 通过。此测试使用隔离模拟，不修改测试机器启动项，也不能替代干净环境安装验收。

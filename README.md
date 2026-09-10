@@ -4,9 +4,9 @@
 
 收到英文消息，在原文下方阅读中文译文；输入中文，按 Enter 翻译为英文并发送。频道和私信名称旁各有独立开关，无需预览窗口或底部工具栏。
 
-**当前版本：0.1.2 Windows x64 测试版。** 基础翻译、发送已由用户在真实频道和私信中验证；最新 Discord 富文本、开机启动、实际通知及安装卸载仍待完整人工验收。
+**当前版本：0.1.3 Windows x64 测试版。** 基础翻译、发送已由用户在真实频道和私信中验证；最新 Discord 富文本、开机启动、实际通知及安装卸载仍待完整人工验收。
 
-[下载测试版](https://github.com/XikiiMaker/XIKII-Discord-Case/releases/tag/v0.1.2) · [报告问题](https://github.com/XikiiMaker/XIKII-Discord-Case/issues) · [验证记录](docs/validation.md)
+[下载测试版](https://github.com/XikiiMaker/XIKII-Discord-Case/releases/tag/v0.1.3) · [报告问题](https://github.com/XikiiMaker/XIKII-Discord-Case/issues) · [验证记录](docs/validation.md)
 
 ## 功能
 
@@ -73,7 +73,7 @@ $env:WEBCORD_BUILD='release'
 npm run make -- --platform win32 --arch x64
 ```
 
-本地验证覆盖 TypeScript、43 项 Node/DOM 测试、29 项 Electron 页面场景、7 项 Slate/React 编辑器场景及跨进程会话保存。自动化使用人工数据和模拟翻译服务，不发送真实 Discord 消息。远端 CI 尚未启用，模板见 [docs/ci.yml.example](docs/ci.yml.example)。
+本地验证覆盖 TypeScript、47 项 Node/DOM 测试、29 项 Electron 页面场景、7 项 Slate/React 编辑器场景及跨进程会话保存。自动化使用人工数据和模拟翻译服务，不发送真实 Discord 消息。远端 CI 尚未启用，模板见 [docs/ci.yml.example](docs/ci.yml.example)。
 
 架构：Discord 页面 / preload → 窄接口 IPC → Electron 主进程 → 翻译队列、缓存与上下文 → Qwen / DashScope。密钥管理与网络调用集中在主进程。
 
