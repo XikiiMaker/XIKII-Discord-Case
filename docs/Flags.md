@@ -34,13 +34,11 @@ following build environment variables to set build specific flags:
 - `WEBCORD_ASAR={true,false}` – if set to `false`, WebCord won't be packaged to
   the `asar` archive. Default is `true`.
 
-- `WEBCORD_UPDATE_NOTIFICATIONS={true,false}` – if set to `false`, notifications
-  won't show on the new updates; this feature is meant for the package
-  maintainers so they can disable the notifications for their users and let the
-  package manager to handle the update notifications.
+- XIKII builds disable upstream update checks and notifications. The upstream
+  `WEBCORD_UPDATE_NOTIFICATIONS` build flag is not used by this fork.
 
 - `WEBCORD_WIN32_APPID=[string]` *(Windows only)* – replaces the `ApplicationUserModelID`, used
-  as an unique application identifier. Default is `SpacingBat3.WebCord`. You
+  as an unique application identifier. Default is `XikiiMaker.DiscordCase`. You
   should replace it if you want to differ your build from the official ones,
   e.g. if you release your own WebCord package for Windows with your own
   patches and want to allow for coexisting it with the official WebCord

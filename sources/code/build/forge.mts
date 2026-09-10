@@ -36,7 +36,7 @@ import { FusesPlugin } from "@electron-forge/plugin-fuses";
 
 const packageJson = new PackageJSON(["author","version","name"]);
 const projectPath = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const appUserModelId = process.env["WEBCORD_WIN32_APPID"];
+const appUserModelId = process.env["WEBCORD_WIN32_APPID"] ?? "XikiiMaker.DiscordCase";
 const flatpakId = process.env["WEBCORD_FLATPAK_ID"]?.toLowerCase() ??
   "io.github.spacingbat3.webcord";
 const author = packageJson.data.author !== undefined ? new Person(packageJson.data.author).name : "SpacingBat3";

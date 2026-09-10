@@ -49,4 +49,4 @@ npm start
 
 从客户端「文件 → 设置 → 翻译设置」选择地域、模型，保存本机 API Key 并确认启用。自动发送默认关闭；开启后翻译完成自动发送。上下文、流式输出默认关闭。输入区域支持本会话开关、中英目标语言选择和译文预览。Ctrl+Alt+T 切换本会话翻译，Ctrl+Enter 发送原文；频道列表显示翻译标识，右键可控制会话设置。
 
-`npm run test:electron` 运行完全本地的模拟联调，不发送真实消息。当前保留上游图标，尚未制作 XIKII 品牌图标和正式安装包。
+`npm run test:electron` 运行完全本地的模拟联调，不发送真实消息。Windows x64 测试包可通过 `npm run make -- --platform win32 --arch x64` 构建，生成 ZIP、EXE 和 MSI；使用及验收步骤见 [Windows 测试说明](docs/windows-test.md)。当前保留上游图标，尚未发布正式 Release。

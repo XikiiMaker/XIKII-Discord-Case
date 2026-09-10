@@ -2,10 +2,9 @@
  * Declarations used between multiple files (main scripts only)
  */
 import { nativeImage } from "electron/common";
-import { getAppPath, getName } from "./electron";
+import { getAppPath } from "./electron";
 import { resolve } from "path";
 import { BuildInfo, typeMerge, isPartialBuildInfo } from "../global";
-import packageJson, { Person } from "./package";
 import { readFileSync } from "fs";
 
 /** Icon names used in WebCord */
@@ -76,7 +75,7 @@ export const appInfo = Object.freeze({
   /** Application repository details */
   repository: {
     /** Repository indentifier in format `author/name`. */
-    name: new Person(packageJson.data.author ?? "").name + "/" + getName(),
+    name: "XikiiMaker/XIKII-Discord-Case",
     /** Web service on which app repository is published. */
     provider: "github.com"
   },

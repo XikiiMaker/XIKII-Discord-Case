@@ -9,6 +9,7 @@
 - `npm run test:electron`：实际 Electron 主进程、隔离 preload、可信设置页和 Chromium 输入事件联调，使用本地 HTTPS fixture，不访问真实 Discord 或 Qwen。
 - 模拟联调验证 14 项：safeStorage 密钥加密、接收译文、预览保留草稿、设置保存、仅有中英选项、设置分类切换、双向流式输出、成功后隐藏原文、频道列表标识、快捷开关恢复原文、自动发送恰好一次、修改草稿不发送、切换会话不发送、会话隔离。
 - UI 证据输出位置：`cache/evidence/`，属于本地构建产物，不提交包含运行数据的目录。
+- Windows x64 ZIP、Squirrel EXE/MSI 已构建。已检查 ASAR 包含中英翻译模块且排除测试与运行缓存；上游更新关闭。打包程序 `--version` 返回 `XIKII Discord Case v0.1.0, stable build`，退出码 0。此检查不替代真实登录与干净环境安装/卸载验收，操作步骤见 [Windows 测试说明](windows-test.md)。
 
 已检查的模拟界面截图（仅含测试文字）：
 
