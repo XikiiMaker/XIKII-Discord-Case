@@ -1,5 +1,5 @@
 // No Discord or Qwen network traffic: HTTPS is served by this local fixture.
-const { app, BrowserWindow, session } = require('electron');
+const { app, BrowserWindow, session, ipcMain } = require('electron');
 const fs = require('node:fs');
 const path = require('node:path');
 const assert = require('node:assert/strict');
@@ -116,14 +116,29 @@ async function main() {
   win.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...switchPoint});
   await until(() => win.webContents.executeJavaScript("document.querySelectorAll('[data-xikii-translation-toggle]')[1].getAttribute('aria-checked')==='true'"), 'non-current channel switch click');
   assert.equal(win.webContents.getURL(), 'https://discord.com/channels/@me/123', 'switch click must not navigate');
+  const columnsBefore = await win.webContents.executeJavaScript("Array.from(document.querySelectorAll('[data-xikii-translation-toggle]'),node=>node.getBoundingClientRect().right)");
+  await win.webContents.executeJavaScript("document.querySelector('aside a .linkTop').insertAdjacentHTML('beforeend','<button>邀请</button><button>设置</button>');document.querySelectorAll('.name_native')[1].textContent='短';");
+  const columnsAfter = await win.webContents.executeJavaScript("Array.from(document.querySelectorAll('[data-xikii-translation-toggle]'),node=>node.getBoundingClientRect().right)");
+  assert.deepEqual(columnsAfter, columnsBefore, 'showing native actions or changing name length cannot shift switches');
+  assert(columnsAfter.every(right=>Math.abs(right-columnsAfter[0])<1), 'all switches share the right column');
+  win.webContents.invalidate();await wait(200);fs.writeFileSync(path.resolve(root,'cache/evidence/translation-fixed-column.png'),(await win.webContents.capturePage()).toPNG());
   // A trusted settings window uses the same production IPC controls.
-  const settings = new BrowserWindow({ show: false, width: 1150, height: 1000, webPreferences: { preload: path.resolve(__dirname, 'electron-settings-preload.cjs'), sandbox: false, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true } });
+  const { generateConfig } = require('../app/code/main/windows/settings.js');
+  ipcMain.handle('settings-generate-html', () => Object.entries(generateConfig()));
+  const settings = new BrowserWindow({ show: false, width: 1150, height: 1000, webPreferences: { preload: path.resolve(root, 'app/code/renderer/preload/settings.js'), sandbox: false, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true } });
   attachTranslation(settings, true);
   await settings.loadFile(path.resolve(root, 'sources/assets/web/html/settings.html'));
   await until(() => settings.webContents.executeJavaScript(`!!document.querySelector('.xikii-settings-form button')`), 'settings form');
   assert.deepEqual(await settings.webContents.executeJavaScript(`Array.from(document.querySelector('.xikii-settings-form select').options, option => option.value)`), ['en', 'zh']);
   assert.deepEqual(await settings.webContents.executeJavaScript(`Array.from(document.querySelectorAll('[role=tabpanel]'), panel => panel.hidden)`), [false, true]);
   await settings.webContents.executeJavaScript(`document.getElementById('settings-tab-client').click();`);
+  const clientText = await settings.webContents.executeJavaScript(`document.getElementById('webcord-client-settings').innerText`);
+  assert(clientText.includes('隐私') && clientText.includes('麦克风') && clientText.includes('权限'));
+  assert(!/Privacy|General|Microphone|PERMISSIONS|Block known|unknownKey/.test(clientText));
+  assert.equal(await settings.webContents.executeJavaScript(`document.querySelectorAll('input[name="general.taskbar.flash"],input[name="privacy.permissions.notifications"]').length`),0,'desktop controls must not be duplicated');
+  await settings.webContents.executeJavaScript(`Array.from(document.querySelectorAll('h1')).find(node=>node.textContent==='隐私').scrollIntoView();window.scrollBy(0,-80);`);
+  settings.webContents.invalidate();await wait(250);
+  fs.writeFileSync(path.resolve(root,'cache/evidence/client-privacy-chinese.png'),(await settings.webContents.capturePage()).toPNG());
   assert.deepEqual(await settings.webContents.executeJavaScript(`Array.from(document.querySelectorAll('[role=tabpanel]'), panel => panel.hidden)`), [true, false]);
   await until(() => settings.webContents.executeJavaScript("!!document.getElementById('desktop-save')"), 'desktop settings form');
   assert.equal(await settings.webContents.executeJavaScript("document.getElementById('desktop-startup').disabled"), true, 'development Electron cannot install a startup entry');
@@ -200,7 +215,7 @@ async function main() {
   assert(distances.every(gap => gap >= typography.line - 1), 'wrapped line baselines never collapse');
   win.webContents.invalidate(); await wait(200);
   fs.writeFileSync(path.resolve(root, 'cache/evidence/translation-chinese-spacing.png'), (await win.webContents.capturePage()).toPNG());
-  const output = { passed: ['encrypted-key-storage', 'incoming-render', 'direct-send-without-preview', 'settings-save', 'chinese-english-options-only', 'settings-tabs', 'desktop-notification-preferences-save', 'development-startup-disabled', 'streaming-incoming-and-outgoing', 'hide-original-after-success', 'sidebar-translation-switch', 'shortcut-toggle-restores-original', 'automatic-send-once', 'edited-draft-not-sent', 'navigation-not-sent', 'conversation-isolation', 'independent-encrypted-provider-keys', 'changed-endpoint-clears-fallback-key', 'fallback-settings-save', 'fallback-incoming-provider-label', 'fallback-automatic-send-once', 'wide-and-narrow-no-toolbar-or-composer-overlap', 'channel-switch-inline-alignment', 'non-current-channel-switch-click-without-navigation', 'wrapped-chinese-line-height', 'raw-shortcut-without-api', 'failed-translation-keeps-draft'], apiCalls, streamCalls, fallbackCalls, externalNetwork: false };
+  const output = { passed: ['encrypted-key-storage', 'incoming-render', 'direct-send-without-preview', 'settings-save', 'chinese-english-options-only', 'settings-tabs', 'desktop-notification-preferences-save', 'development-startup-disabled', 'streaming-incoming-and-outgoing', 'hide-original-after-success', 'sidebar-translation-switch', 'shortcut-toggle-restores-original', 'automatic-send-once', 'edited-draft-not-sent', 'navigation-not-sent', 'conversation-isolation', 'independent-encrypted-provider-keys', 'changed-endpoint-clears-fallback-key', 'fallback-settings-save', 'fallback-incoming-provider-label', 'fallback-automatic-send-once', 'wide-and-narrow-no-toolbar-or-composer-overlap', 'channel-switch-inline-alignment', 'non-current-channel-switch-click-without-navigation', 'wrapped-chinese-line-height', 'fixed-right-column-despite-native-actions', 'production-client-settings-chinese', 'raw-shortcut-without-api', 'failed-translation-keeps-draft'], apiCalls, streamCalls, fallbackCalls, externalNetwork: false };
   fs.writeFileSync(path.resolve(root, 'cache/evidence/smoke-result.json'), JSON.stringify(output, null, 2));
   console.log(JSON.stringify(output));
   settings.destroy(); win.destroy(); app.exit(0);

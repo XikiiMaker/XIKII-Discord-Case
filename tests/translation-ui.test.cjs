@@ -12,8 +12,11 @@ void test('switches align with names, include disabled channels, and exclude mes
   const controls = document.querySelectorAll('[data-xikii-translation-toggle]');
   assert.equal(controls.length, 2);
   const control = controls[0];
-  assert.equal(control.parentElement.className, 'linkTop');
-  assert.equal(control.previousElementSibling.textContent, 'autotrans');
+  assert.equal(control.parentElement.tagName, 'A');
+  assert.equal(control.style.position, 'absolute');
+  assert.equal(control.style.insetInlineEnd, '8px');
+  assert.equal(control.parentElement.style.paddingInlineEnd, '40px');
+  assert.equal(control.previousElementSibling.querySelector('.name_example').textContent, 'autotrans');
   assert.equal(control.textContent, ''); assert.equal(control.style.width, '24px');
   assert.equal(control.getAttribute('aria-checked'), 'true');
   assert.equal(controls[1].getAttribute('aria-checked'), 'false');

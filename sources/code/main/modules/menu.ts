@@ -127,6 +127,7 @@ export function tray(parent: Electron.BrowserWindow): Electron.Tray {
       enabled: false
     },
     { type: "separator" },
+    { label: strings.windows.settings, click: () => loadSettingsWindow(parent) },
     ...(process.platform !== "win32" ? [{
       label: strings.tray.toggle,
       click: () => setImmediate(toggleVisibility)
@@ -284,6 +285,7 @@ export function bar(repoLink: string, parent: Electron.BrowserWindow): Electron.
       ]
     }
   ]);
-  Menu.setApplicationMenu(menu);
+  // Keep the macOS system menu; Windows/Linux use context and tray menus.
+  Menu.setApplicationMenu(process.platform === "darwin" ? menu : null);
   return menu;
 }

@@ -1,0 +1,118 @@
+{
+  "$schema": "../../../schemas/localization/settings.json",
+  "general": {
+    "name": "常规",
+    "menuBar": {
+      "name": "菜单栏",
+      "description": "设置窗口顶部菜单栏的显示方式。",
+      "labels": {
+        "hide": "自动隐藏菜单栏（按 <kbd>Alt</kbd> 显示或隐藏）。"
+      }
+    },
+    "tray": {
+      "name": "系统托盘",
+      "description": "设置系统托盘图标及窗口隐藏行为。",
+      "labels": {
+        "disable": "禁用系统托盘功能。"
+      }
+    },
+    "taskbar": {
+      "name": "任务栏",
+      "description": "设置客户端在任务栏中的提醒行为。",
+      "labels": {
+        "flash": "后台收到新的提及或私信时闪烁任务栏按钮。"
+      }
+    },
+    "window": {
+      "name": "客户端主窗口",
+      "description": "设置聊天窗口的外观和关闭行为。",
+      "labels": {
+        "transparent": "允许窗口背景半透明。",
+        "hideOnClose": "点击关闭按钮时隐藏到托盘。"
+      }
+    }
+  },
+  "privacy": {
+    "name": "隐私",
+    "blockApi": {
+      "name": "Discord 请求拦截",
+      "description": "拦截部分 Discord 请求和脚本，以减少追踪。",
+      "labels": {
+        "science": "拦截已知遥测接口（<code>/science</code> 和 <code>/tracing</code>）。",
+        "sentry": "阻止 Discord 加载 Sentry 错误追踪。",
+        "typingIndicator": "隐藏自己的“正在输入”状态（<code>/typing</code>）。",
+        "fingerprinting": "拦截已知设备指纹脚本（<code>api.js</code> 和 <code>cdn-cgi</code>）。"
+      }
+    },
+    "permissions": {
+      "name": "权限",
+      "description": "允许或拒绝 Discord 网页的权限请求。未列出的其他权限会由客户端自动拒绝。",
+      "labels": {
+        "video": "摄像头",
+        "audio": "麦克风",
+        "fullscreen": "全屏",
+        "notifications": "桌面通知",
+        "display-capture": "屏幕共享",
+        "background-sync": "后台同步",
+        "speaker-selection": "音频设备列表",
+        "clipboard-sanitized-write": "写入剪贴板"
+      }
+    }
+  },
+  "advanced": {
+    "name": "高级",
+    "csp": {
+      "name": "内容安全策略",
+      "description": "使用客户端内置的内容安全策略替代 Discord 的默认策略，控制网页可加载的资源。",
+      "labels": {
+        "enabled": "使用内置内容安全策略。"
+      }
+    },
+    "cspThirdParty": {
+      "name": "第三方网站",
+      "description": "选择允许连接或显示内容的第三方网站。",
+      "info": {
+        "googleStorageApi": "Discord 文件上传需要此权限。"
+      }
+    },
+    "currentInstance": {
+      "name": "Discord 版本",
+      "description": "选择客户端连接的 Discord 网站版本。翻译功能目前仅支持正式版。"
+    },
+    "devel": {
+      "name": "开发者模式",
+      "description": "启用开发工具和仍在开发中的实验选项。这些功能可能不稳定，适合调试时使用。",
+      "labels": {
+        "enabled": "启用开发者模式。"
+      }
+    },
+    "redirection": {
+      "name": "跨站跳转",
+      "description": "设置网页跳转到其他来源或外部应用时的处理方式。<b>此选项影响客户端安全。</b>",
+      "labels": {
+        "warn": "跳转到其他来源或外部应用前始终提醒。"
+      }
+    },
+    "optimize": {
+      "name": "客户端性能优化",
+      "description": "根据当前软硬件环境调整 Chromium 参数，可能改善性能或功能。此功能仍处于实验阶段。",
+      "labels": {
+        "gpu": "针对当前显卡启用优化。"
+      }
+    },
+    "webApi": {
+      "name": "网页接口访问",
+      "description": "设置网页脚本可以使用的功能接口。",
+      "labels": {
+        "webGl": "启用 WebGL 图形加速。"
+      }
+    },
+    "unix": {
+      "name": "Unix 系统实验功能",
+      "description": "启用 Chromium/Blink 标记为实验性的系统功能，可能存在兼容性问题。",
+      "labels": {
+        "autoscroll": "启用鼠标中键自动滚动。"
+      }
+    }
+  }
+}

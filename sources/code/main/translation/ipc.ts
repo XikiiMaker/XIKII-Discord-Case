@@ -94,7 +94,7 @@ function register() {
     const current = isRecord(input) && typeof input['url'] === "string" ? conversation(input['url']) : null;
     if (!current) throw new Error("会话链接无效。");
     const settings = structuredClone(config().settings);
-    if (!settings.consent) throw new Error("请先到 文件 → 设置 → 翻译设置，确认启用翻译。");
+    if (!settings.consent) throw new Error("请先右键频道或私信，打开翻译设置并确认启用。");
     if (current.dm && !settings.dmEnabled) throw new Error("私信翻译已全局关闭，请先在翻译设置中开启。");
     const rule = ruleFor(settings, current);
     settings.channels[current.id] = { enabled: !rule.enabled, target: rule.target };
@@ -128,9 +128,14 @@ function register() {
   handle("insert", async (event, input) => {
     const win = mainOwner(event);
     const current = conversation(win.webContents.getURL());
-    if (!current || !isRecord(input) || input['id'] !== current.id || typeof input['text'] !== "string" || input['text'].length > 8000 || !input['text'].trim()) throw new Error("会话或译文无效。");
+    if (!current || !isRecord(input) || input['id'] !== current.id || typeof input['text'] !== "string" || input['text'].length > 8000) throw new Error("会话或译文无效。");
     if (!ruleFor(config().settings, current).enabled) throw new Error("翻译已关闭。");
-    await win.webContents.insertText(input['text']);
+    if (input['text']) await win.webContents.insertText(input['text']);
+    else {
+      // Rich-text translation can remove a selected prose segment without touching a void node.
+      win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
+      win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
+    }
     return true;
   });
   handle("send", (event, input) => {

@@ -314,8 +314,7 @@ export default function createMainWindow(...flags:MainWindowFlags): BrowserWindo
     });
   }
   void win.loadFile(resolve(app.getAppPath(), "sources/assets/web/html/load.html"));
-  win.setAutoHideMenuBar(appConfig.value.settings.general.menuBar.hide);
-  win.setMenuBarVisibility(!appConfig.value.settings.general.menuBar.hide);
+  if (process.platform !== "darwin") win.removeMenu();
   // Add English to the spellchecker
   if(process.platform !== "darwin") {
     let valid = true;
@@ -428,12 +427,6 @@ export default function createMainWindow(...flags:MainWindowFlags): BrowserWindo
     if(event.senderFrame && new URL(event.senderFrame.url).protocol !== "file:")
       return;
     try {
-      // Menu bar
-      if (object?.settings?.general?.menuBar?.hide !== undefined) {
-        console.debug("[Settings] Updating menu bar state...");
-        win.setAutoHideMenuBar(appConfig.value.settings.general.menuBar.hide);
-        win.setMenuBarVisibility(!appConfig.value.settings.general.menuBar.hide);
-      }
       // Custom Discord instance switch
       if(object?.settings?.advanced?.currentInstance?.radio !== undefined) {
         void win.loadURL(knownInstancesList[appConfig.value.settings.advanced.currentInstance.radio][1].href);

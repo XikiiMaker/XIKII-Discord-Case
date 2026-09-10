@@ -17,7 +17,7 @@ type generatedConfig = AppConfig["settings"] & L10N["settings"] & {
   };
 };
 
-function generateConfig () {
+export function generateConfig () {
   const config = deepmerge(appConfig.value.settings, new L10N().settings);
   const finalConfig: PartialRecursive<generatedConfig> = config satisfies object;
   const websitesThirdParty = Object.freeze(({
@@ -34,7 +34,7 @@ function generateConfig () {
     twitter: "Twitter",
     vimeo: "Vimeo",
     youtube: "YouTube",
-    googleStorageApi: "Google Storage API"
+    googleStorageApi: "Google 文件存储服务"
   } as const) satisfies cspTP<string>);
   // Append more third-party sites labels.
   if (finalConfig.advanced?.cspThirdParty && !("labels" in finalConfig.advanced.cspThirdParty))

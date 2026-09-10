@@ -66,7 +66,8 @@ class L10N {
     ];
   }
   /** List of associated locales with the current user's locale. */
-  public locales = Object.freeze(this.#altLocales(getLocale()));
+  // This Chinese/English translation client uses a Chinese desktop interface.
+  public locales = Object.freeze(this.#altLocales("zh-CN"));
 
   /** A list of paths from which WebCord will load the localization files. */
   public searchPaths = Object.freeze([

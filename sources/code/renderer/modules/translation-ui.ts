@@ -4,19 +4,28 @@ import type { TranslationSettings } from "../../common/translation";
 export const incomingTranslationStyle = 'display:block;box-sizing:border-box;min-width:0;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;word-break:normal;color:var(--text-muted,#949ba4);font-family:var(--font-primary,inherit);font-size:0.9em;font-weight:400;line-height:1.6;letter-spacing:normal;margin:4px 0 6px;border-inline-start:2px solid var(--brand-500,#5865f2);padding:0 0 0 8px';
 
 const switches = new WeakMap<HTMLAnchorElement, HTMLElement>();
+const positionedLinks = new WeakSet<HTMLAnchorElement>();
 /** The only persistent translation UI: a compact switch alongside each channel/DM name. */
 export function syncTranslationToggles(document: Document, settings: TranslationSettings, toggle: (url: string) => Promise<void>, busyId?: string) {
   for (const anchor of document.querySelectorAll<HTMLAnchorElement>('a[href*="/channels/"]')) {
     if (anchor.closest('main, [role="main"], [id^="chat-messages-"]')) continue;
     const linked = conversation(anchor.href);
     if (!linked) continue;
+    if (!positionedLinks.has(anchor)) {
+      // Reserve a column outside the native row, including its hover-only actions.
+      const computed = document.defaultView?.getComputedStyle(anchor);
+      if (!computed || computed.position === "static") anchor.style.position = "relative";
+      anchor.style.boxSizing = "border-box";
+      anchor.style.setProperty("padding-inline-end", `${(parseFloat(computed?.paddingInlineEnd ?? "") || 0) + 40}px`, "important");
+      positionedLinks.add(anchor);
+    }
     const name = anchor.querySelector<HTMLElement>('[class*="name_"], [class*="channelName"], [class*="nameContainer"]') ??
       Array.from(anchor.querySelectorAll<HTMLElement>('span,div')).find(node => !node.hasAttribute('data-xikii-translation-toggle') && node.childElementCount === 0 && Boolean(node.textContent?.trim()));
     let control = switches.get(anchor);
     if (!control) {
       control = document.createElement("span"); control.dataset['xikiiTranslationToggle'] = "true";
       control.setAttribute("role", "switch"); control.tabIndex = 0;
-      control.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;align-self:center;vertical-align:middle;flex:0 0 24px;width:24px;height:20px;min-width:24px;max-width:24px;margin:0 4px;padding:0;border:0;background:none;cursor:pointer;user-select:none';
+      control.style.cssText = 'position:absolute;inset-inline-end:8px;top:50%;transform:translateY(-50%);display:inline-flex;align-items:center;justify-content:center;width:24px;height:20px;min-width:24px;max-width:24px;margin:0;padding:0;border:0;background:none;cursor:pointer;user-select:none;z-index:1';
       const shadow = control.attachShadow({ mode: "closed" });
       const style = document.createElement("style");
       style.textContent = ':host(:focus-visible){outline:2px solid var(--focus-primary,#00a8fc);outline-offset:2px;border-radius:4px}.track{display:block;width:24px;height:14px;border-radius:8px;background:var(--background-modifier-accent,#4e5058);padding:2px;box-sizing:border-box;transition:background .15s}.thumb{display:block;width:10px;height:10px;border-radius:50%;background:#b5bac1;transition:transform .15s}:host([aria-checked=true]) .track{background:var(--brand-500,#5865f2)}:host([aria-checked=true]) .thumb{transform:translateX(10px);background:white}:host([aria-disabled=true]){opacity:.5;cursor:wait}:host([aria-busy=true]) .thumb{animation:pulse .8s infinite alternate}@keyframes pulse{to{opacity:.4}}@media(prefers-reduced-motion:reduce){.track,.thumb{transition:none}:host([aria-busy=true]) .thumb{animation:none}}';
@@ -39,8 +48,7 @@ export function syncTranslationToggles(document: Document, settings: Translation
     control.setAttribute("aria-busy", String(busyId === linked.id));
     control.setAttribute("aria-label", `${name?.textContent ?? "本会话"}自动翻译`);
     control.title = busyId === linked.id ? "正在翻译发送消息…" : `${rule.enabled ? "关闭" : "开启"}自动翻译 · 发送${languages[rule.target]}`;
-    if (name && name.parentElement !== anchor) { if (name.nextElementSibling !== control) name.after(control); }
-    else if (control.parentElement !== anchor) anchor.append(control);
+    if (control.parentElement !== anchor) anchor.append(control);
   }
 }
 

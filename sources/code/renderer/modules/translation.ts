@@ -4,6 +4,8 @@ import type { Reply, TranslationState } from "../../common/translation";
 import { composerSelector, conversationMessages, messageText, messageId, draftText, plainComposer } from "./discord-translation-dom";
 import { ConversationContext } from "../../common/translation-context";
 import { syncTranslationToggles, createTranslationNotice, incomingTranslationStyle } from "./translation-ui";
+import { snapshotComposer, replaceRichComposer } from "./rich-composer";
+import type { ComposerSnapshot } from "./rich-composer";
 
 async function invoke<T>(name: string, input?: unknown): Promise<T> {
   const result = await ipc.invoke(`translation:${name}`, input) as Reply<T>;
@@ -128,15 +130,28 @@ export function startTranslation() {
     const current = conversation(location.href);
     const editor = document.querySelector<HTMLElement>(composerSelector);
     if (!current || !editor) return;
-    if (!plainComposer(editor)) { notice.show("提及或自定义表情输入块尚未适配；草稿已保留，可用 Ctrl+Enter 发送原文。"); return; }
-    const original = draftText(editor);
+    // Deterministic, collision-free markers retain cache hits for repeated rich drafts.
+    let nonce = "COMPOSER";
+    while (editor.textContent?.includes(`XIKII_NODE_${nonce}_`)) nonce += "_";
+    let rich: ComposerSnapshot | undefined;
+    try { if (!plainComposer(editor)) rich = snapshotComposer(editor, nonce); }
+    catch (error) { errorText(error); return; }
+    const original = rich?.text ?? draftText(editor);
     if (!original.trim()) return;
     busy = true; notice.clear(); scan();
     const version = generation;
     try {
       const translated = await translate({ id: current.id, direction: "outgoing", text: original, target: ruleFor(state.settings, current).target, context: context.before(current.id, null, state.settings.contextCount) });
       if (version !== generation) return;
-      if (!enabled() || conversation(location.href)?.id !== current.id || !editor.isConnected || draftText(editor) !== original) throw new Error("草稿或会话已变化，未发送旧译文，请重新发送。");
+      const valid = () => version === generation && enabled() && conversation(location.href)?.id === current.id && editor.isConnected;
+      if (!valid() || (rich ? snapshotComposer(editor, nonce).signature !== rich.signature : draftText(editor) !== original)) throw new Error("草稿或会话已变化，未发送旧译文，请重新发送。");
+      if (rich) {
+        await replaceRichComposer(editor, nonce, rich, translated, valid, async text => {
+          writingDraft = true;
+          try { await invoke("insert", { id: current.id, text }); }
+          finally { writingDraft = false; }
+        });
+      } else {
       editor.focus();
       const selection = window.getSelection();
       if (!selection) throw new Error("无法选中输入框，草稿已保留。");
@@ -145,6 +160,7 @@ export function startTranslation() {
       try { await invoke("insert", { id: current.id, text: translated }); }
       finally { writingDraft = false; }
       if (version !== generation || conversation(location.href)?.id !== current.id || !editor.isConnected || draftText(editor) !== translated) throw new Error("输入框或会话已变化，未发送，请检查草稿。");
+      }
       editor.focus(); await triggerSend(current.id);
     } catch (error) { if (version === generation) errorText(error); }
     finally { if (version === generation) { busy = false; scan(); } }

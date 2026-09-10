@@ -27,7 +27,7 @@ void test('context contains only preceding bounded messages, never target or lat
   assert.deepEqual(recentContext(nodes, nodes[2], 0), []);
   assert.deepEqual(recentContext(nodes, null, 2), ['C', 'D']);
 });
-void test('structured mentions refuse destructive plain-text composer replacement', () => {
+void test('structured mentions are routed away from whole-composer replacement', () => {
   const document = dom('<div id="plain">hello</div><div id="rich"><span contenteditable="false">@person</span></div>');
   assert.equal(plainComposer(document.getElementById('plain')), true);
   assert.equal(plainComposer(document.getElementById('rich')), false);

@@ -3,7 +3,7 @@
   "name": "xikii-discord-case",
   "productName": "XIKII Discord Case",
   "desktopName": "xikii-discord-case",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Discord client with Qwen translation, based on WebCord.",
   "main": "app/code/common/main.js",
   "scripts": {
@@ -19,7 +19,9 @@
     "publish": "tsc && electron-forge publish",
     "prepack": "tsc && electron-forge package && echo 'This script will now fail to cancel creating a Node package...' && exit 1",
     "test:translation": "tsc && node --test tests/*.test.cjs",
-    "test:electron": "tsc && electron tests/electron-smoke.cjs"
+    "test:electron": "tsc && electron tests/electron-smoke.cjs",
+    "test:slate": "tsc && electron tests/electron-slate.cjs",
+    "test:session": "tsc && electron tests/electron-session.cjs write && electron tests/electron-session.cjs read"
   },
   "author": {
     "name": "SpacingBat3",
@@ -55,9 +57,15 @@
     "@types/source-map-support": "^0.5.4",
     "@types/ws": "^8.5.1",
     "electron": ">=43.1.0 < 43.3.0",
+    "esbuild": "0.28.2",
     "jsdom": "^30.0.1",
     "oxlint": "^1.73.0",
     "oxlint-tsgolint": "^7.0.2001",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "slate": "0.126.2",
+    "slate-dom": "0.126.0",
+    "slate-react": "0.126.4",
     "typescript": "^7.0.2"
   },
   "dependencies": {

@@ -54,7 +54,7 @@ function fetchFromWebsite(this: HTMLInputElement) {
 function generateRadioLabels(key:string) {
   switch(key) {
     case "currentInstance":
-      return knownInstancesList.map(value => [value[0],value[2]] as const);
+      return knownInstancesList.map((value, index) => [["Discord 正式版", "Discord 开发版（Canary）", "Discord 公开测试版（PTB）"][index] ?? value[0], value[2]] as const);
     default:
       throw new Error("Currently unsupported!");
   }
@@ -65,7 +65,7 @@ function checkPlatformKey(key:string) {
     case "win32":
     case "darwin":  return process.platform === key;
     case "unix":    return process.platform !== "win32";
-    case "menuBar": return process.platform !== "darwin";
+    case "menuBar": return false;
     default:        return true;
   }
 }
@@ -108,6 +108,8 @@ function generateSettings(optionsGroups: htmlConfig) {
     document.body.appendChild(document.createElement("h1"))
       .innerHTML = sanitize(group.name, sanitizeConfig);
     for(const settingKey of Object.keys(group)) if(settingKey !== "name" && settingKey !== buildType && checkPlatformKey(settingKey)) {
+      // These controls have one source of truth in the desktop settings section.
+      if (groupId === "general" && settingKey === "taskbar") continue;
       const setting = (group as unknown as generatedConfigGeneric)[settingKey];
       if(setting) {
         // Skip unlocalized configurations.
@@ -140,6 +142,7 @@ function generateSettings(optionsGroups: htmlConfig) {
           formContainer.append(...(Object.keys as keys)(setting)
             .sort()
             .filter(key => key !== "name" && key !== "description" && key !== "labels" && key !== "info" && setting[key] !== undefined)
+            .filter(key => !(groupId === "privacy" && settingKey === "permissions" && key === "notifications"))
             .map(key => createForm({
               type:"checkbox",
               id: groupId+"."+settingKey+"."+key,
