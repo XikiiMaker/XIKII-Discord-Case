@@ -4,10 +4,10 @@
 
 ## 已完成
 
-- `npm test`：TypeScript 编译、16 项 Node/DOM 测试和 oxlint。
+- `npm test`：TypeScript 编译、22 项 Node/DOM 测试和 oxlint。
 - GitHub CI 尚未启用：当前 CLI 缺少 workflow 写入权限，配置模板见 `ci.yml.example`。
 - `npm run test:electron`：实际 Electron 主进程、隔离 preload、可信设置页和 Chromium 输入事件联调，使用本地 HTTPS fixture，不访问真实 Discord 或 Qwen。
-- 模拟联调验证：safeStorage 密钥加密、接收译文、预览保留草稿、设置保存、自动发送恰好一次、修改草稿不发送、切换会话不发送、会话隔离。
+- 模拟联调验证 14 项：safeStorage 密钥加密、接收译文、预览保留草稿、设置保存、仅有中英选项、设置分类切换、双向流式输出、成功后隐藏原文、频道列表标识、快捷开关恢复原文、自动发送恰好一次、修改草稿不发送、切换会话不发送、会话隔离。
 - UI 证据输出位置：`cache/evidence/`，属于本地构建产物，不提交包含运行数据的目录。
 
 已检查的模拟界面截图（仅含测试文字）：
@@ -20,7 +20,17 @@
 
 模拟输入框是原生 contenteditable，不包含 Discord 的实际 Slate/React 运行代码。因此这些结果证明本地流程和 IPC 能协作，不等于真实 Discord 兼容性已通过。
 
-真实 DashScope Key 尚未配置，没有产生真实 API 测试费用；模型可用性、翻译质量及响应速度仍需真实联调。没有向真实联系人发送测试消息。
+真实 DashScope 已使用用户授权的 Key，仅发送人工测试文字，累计使用 10/20 次请求。当前 qwen-turbo 的三项中英测试均通过；每项重复请求命中缓存，没有增加 API 调用。以下延迟为本机该次测试观察值，不是性能保证。
+
+| 场景 | 实际结果 | 总耗时 / 首段 |
+| --- | --- | --- |
+| 英译中，含 Markdown、URL、代码 | `**你好！** 访问 https://example.com 并保持 \`USB-C\` 不变。` | 752 ms / 非流式 |
+| 中译英，参考键盘上下文 | `它支持蓝牙吗？` → `Does it support Bluetooth?` | 357 ms / 285 ms |
+| 英译中，参考电脑机箱上下文 | `When will the XIKII case ship?` → `XIKII 机箱什么时候发货？` | 400 ms / 309 ms |
+
+测试中曾发现模型把背景一起译出的缺陷；已将背景与最后待译消息分离，并复测上述三个场景。该修复不代表任意输入的模型输出都能保证正确。
+
+没有向真实 Discord 联系人发送测试消息。测试频道已确定为 `autotrans`，但浏览器控制工具连接失败，实际 Discord 页面联调尚未完成。
 
 ## 重现
 

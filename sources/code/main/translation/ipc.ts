@@ -1,10 +1,11 @@
-import { ipcMain, net, app } from "electron/main";
+import { ipcMain, net, app, Menu } from "electron/main";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { conversation, isRecord, parseRequest, ruleFor, isLanguage } from "../../common/translation";
 import type { Reply } from "../../common/translation";
-import { TranslationEngine } from "./engine";
+import { TranslationEngine, sourceLanguageHint } from "./engine";
 import { TranslationStore } from "./store";
+import loadSettingsWindow from "../windows/settings";
 
 const mainWindows = new Set<Electron.BrowserWindow>();
 const settingsWindows = new Set<Electron.BrowserWindow>();
@@ -50,6 +51,27 @@ function register() {
     changed(); return state;
   });
   handle("clear-cache", (event) => { settingsOwner(event); engine.clear(); return true; });
+  handle("context-menu", (event, input) => {
+    const win = mainOwner(event);
+    if (!isRecord(input) || typeof input['url'] !== "string") throw new Error("会话链接无效。");
+    const current = conversation(input['url']);
+    if (!current) throw new Error("会话链接无效。");
+    const rule = ruleFor(config().settings, current);
+    const apply = (enabled: boolean) => {
+      const next = structuredClone(config().settings);
+      next.channels[current.id] = { enabled, target: rule.target };
+      config().save(next); changed();
+    };
+    Menu.buildFromTemplate([
+      { label: rule.enabled ? "关闭本会话翻译" : "开启本会话翻译", enabled: config().settings.consent && (!current.dm || config().settings.dmEnabled), click: () => apply(!rule.enabled) },
+      { label: "使用默认会话设置", enabled: Object.hasOwn(config().settings.channels, current.id), click: () => {
+        const next = structuredClone(config().settings); delete next.channels[current.id]; config().save(next); changed();
+      } },
+      { type: "separator" },
+      { label: "翻译设置…", click: () => { loadSettingsWindow(win); } }
+    ]).popup({ window: win });
+    return true;
+  });
   handle("conversation", (event, input) => {
     const win = mainOwner(event);
     const current = conversation(win.webContents.getURL());
@@ -68,8 +90,17 @@ function register() {
     if (!rule.enabled) throw new Error("本会话翻译未开启，请检查翻译设置。");
     if (input['direction'] !== "incoming" && input['direction'] !== "outgoing") throw new Error("翻译方向无效。");
     const request = parseRequest(input);
+    if (sourceLanguageHint(request.text) === "other") {
+      if (input['direction'] === "incoming") return request.text;
+      throw new Error("这一版仅支持中英互译；其他语言请使用发送原文。");
+    }
     request.target = input['direction'] === "incoming" ? "zh" : rule.target;
-    const text = await engine.translate(request, settings, config().key());
+    const requestId = input['requestId'];
+    if (requestId !== undefined && (typeof requestId !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(requestId))) throw new Error("翻译请求标识无效。");
+    const text = await engine.translate(request, settings, config().key(), partial => {
+      if (requestId && !win.isDestroyed() && conversation(win.webContents.getURL())?.id === current.id)
+        win.webContents.send("translation:progress", { requestId, text: partial });
+    });
     if (win.isDestroyed() || conversation(win.webContents.getURL())?.id !== current.id) throw new Error("会话已切换，已丢弃译文。");
     return text;
   });

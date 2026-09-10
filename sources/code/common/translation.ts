@@ -1,5 +1,5 @@
 /** Shared, secret-free translation contracts. */
-export const languages = { en: "英语", zh: "简体中文", ja: "日语", ko: "韩语", fr: "法语", de: "德语", es: "西班牙语", ru: "俄语", it: "意大利语", ar: "阿拉伯语", pt: "葡萄牙语", "zh-TW": "繁体中文", th: "泰语", vi: "越南语" } as const;
+export const languages = { en: "英语", zh: "中文" } as const;
 export type Language = keyof typeof languages;
 export const endpoints = {
   china: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions",
@@ -16,6 +16,8 @@ export interface TranslationSettings {
   contextCount: number;
   concurrency: number;
   cacheSize: number;
+  showOriginal: boolean;
+  streaming: boolean;
   channels: Record<string, { enabled: boolean; target: Language }>;
 }
 export interface TranslationState { settings: TranslationSettings; hasKey: boolean; encryptionAvailable: boolean }
@@ -23,7 +25,8 @@ export interface TranslationRequest { text: string; target: Language; context: s
 export type Reply<T> = { ok: true; value: T } | { ok: false; error: string };
 export const defaultTranslationSettings: TranslationSettings = {
   consent: false, dmEnabled: true, target: "en", model: "qwen-turbo", region: "china",
-  sendMode: "preview", contextCount: 0, concurrency: 2, cacheSize: 500, channels: {}
+  sendMode: "preview", contextCount: 0, concurrency: 2, cacheSize: 500,
+  showOriginal: true, streaming: false, channels: {}
 };
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -42,6 +45,9 @@ export function parseSettings(value: unknown): TranslationSettings {
       !integer(value['contextCount'], 0, 10) || !integer(value['concurrency'], 1, 4) ||
       !integer(value['cacheSize'], 0, 2000) || !isRecord(value['channels']) || Object.keys(value['channels']).length > 2000)
     throw new Error("翻译设置无效，请检查模型、语言和数值范围。");
+  const showOriginal = value['showOriginal'] ?? true;
+  const streaming = value['streaming'] ?? false;
+  if (typeof showOriginal !== "boolean" || typeof streaming !== "boolean") throw new Error("翻译显示设置无效。");
   const channels: TranslationSettings['channels'] = {};
   for (const [id, rule] of Object.entries(value['channels'])) {
     if (!/^\d{1,25}$/.test(id) || !isRecord(rule) || typeof rule['enabled'] !== "boolean" || !isLanguage(rule['target']))
@@ -51,7 +57,8 @@ export function parseSettings(value: unknown): TranslationSettings {
   return {
     consent: value['consent'], dmEnabled: value['dmEnabled'], target: value['target'], model: value['model'],
     region: value['region'] as TranslationSettings['region'], sendMode: value['sendMode'],
-    contextCount: value['contextCount'], concurrency: value['concurrency'], cacheSize: value['cacheSize'], channels
+    contextCount: value['contextCount'], concurrency: value['concurrency'], cacheSize: value['cacheSize'],
+    showOriginal, streaming, channels
   };
 }
 export function parseRequest(value: unknown): TranslationRequest {
@@ -60,6 +67,14 @@ export function parseRequest(value: unknown): TranslationRequest {
       !value['context'].every((item: unknown) => typeof item === "string" && item.length <= 1000))
     throw new Error("消息过长或翻译请求无效（上限 8000 字符）。");
   return { text: value['text'], target: value['target'], context: value['context'] as string[] };
+}
+/** Migrate previously saved multilingual prototypes; new writes remain strictly validated. */
+export function migrateStoredSettings(value: unknown): TranslationSettings {
+  if (!isRecord(value) || !isRecord(value['channels'])) return parseSettings(value);
+  const legacy = new Set(["ja", "ko", "fr", "de", "es", "ru", "it", "ar", "pt", "zh-TW", "th", "vi"]);
+  const channels = Object.fromEntries(Object.entries(value['channels']).map(([id, rule]) => [id,
+    isRecord(rule) && typeof rule['target'] === "string" && legacy.has(rule['target']) ? { ...rule, target: "en" } : rule]));
+  return parseSettings({ ...value, channels, target: typeof value['target'] === "string" && legacy.has(value['target']) ? "en" : value['target'] });
 }
 export function conversation(url: string): { id: string; dm: boolean } | null {
   try {

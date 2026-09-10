@@ -1,7 +1,8 @@
 import { ipcRenderer as ipc } from "electron/renderer";
-import { conversation, languages, ruleFor } from "../../common/translation";
+import { conversation, isRecord, languages, ruleFor } from "../../common/translation";
 import type { Reply, TranslationState } from "../../common/translation";
-import { composerSelector, conversationMessages, messageText, draftText, plainComposer, recentContext } from "./discord-translation-dom";
+import { composerSelector, conversationMessages, messageText, messageId, draftText, plainComposer } from "./discord-translation-dom";
+import { ConversationContext } from "../../common/translation-context";
 
 const nodes = () => conversationMessages(document, conversation(location.href)?.id ?? "0");
 async function invoke<T>(name: string, input?: unknown): Promise<T> {
@@ -21,6 +22,18 @@ export function startTranslation() {
   let preview: { original: string; translated: string; editor: HTMLElement; id: string; generation: number } | undefined;
   let seen = new WeakMap<Element, string>();
   let scanTimer: ReturnType<typeof setTimeout> | undefined;
+  const context = new ConversationContext();
+  const progressListeners = new Map<string, (text: string) => void>();
+  async function translate(input: Record<string, unknown>, progress: (text: string) => void) {
+    const requestId = crypto.randomUUID();
+    progressListeners.set(requestId, progress);
+    try { return await invoke<string>("translate", { ...input, requestId }); }
+    finally { progressListeners.delete(requestId); }
+  }
+  ipc.on("translation:progress", (_event, payload: unknown) => {
+    if (isRecord(payload) && typeof payload['requestId'] === "string" && typeof payload['text'] === "string") progressListeners.get(payload['requestId'])?.(payload['text']);
+  });
+  const hiddenOriginals = new Map<HTMLElement, { display: string; priority: string }>();
   const host = document.createElement("div");
   host.id = "xikii-translation-toolbar";
   const shadow = host.attachShadow({ mode: "closed" });
@@ -40,12 +53,26 @@ export function startTranslation() {
   shadow.append(style, bar, output);
   function errorText(error: unknown) { status.textContent = error instanceof Error ? error.message : "翻译失败，原文已保留。"; }
   function clearPreview() { preview = undefined; output.hidden = send.hidden = cancel.hidden = true; output.textContent = ""; }
+  function showOriginal(node: Element) {
+    if (!(node instanceof HTMLElement)) return;
+    const saved = hiddenOriginals.get(node);
+    if (!saved) return;
+    if (saved.display) node.style.setProperty("display", saved.display, saved.priority); else node.style.removeProperty("display");
+    hiddenOriginals.delete(node);
+  }
+  function hideOriginal(node: Element) {
+    if (!(node instanceof HTMLElement) || hiddenOriginals.has(node)) return;
+    hiddenOriginals.set(node, { display: node.style.getPropertyValue("display"), priority: node.style.getPropertyPriority("display") });
+    node.style.setProperty("display", "none", "important");
+  }
   function reset() {
     generation++; seen = new WeakMap(); clearPreview();
+    progressListeners.clear();
+    for (const node of hiddenOriginals.keys()) showOriginal(node);
     for (const node of document.querySelectorAll('[data-xikii-translation]')) node.remove();
   }
   async function refresh() {
-    try { state = await invoke<TranslationState>("state"); reset(); scan(); }
+    try { state = await invoke<TranslationState>("state"); context.clear(); reset(); scan(); }
     catch (error) { errorText(error); }
   }
   function enabled() {
@@ -60,6 +87,20 @@ export function startTranslation() {
     const form = editor?.closest("form");
     if (form && host.nextElementSibling !== form) form.before(host);
     if (!state) return;
+    for (const node of hiddenOriginals.keys()) if (!node.isConnected) hiddenOriginals.delete(node);
+    for (const anchor of document.querySelectorAll<HTMLAnchorElement>('a[href*="/channels/"]')) {
+      if (anchor.closest('main, [role="main"], [id^="chat-messages-"]')) continue;
+      const linked = conversation(anchor.href);
+      if (!linked) continue;
+      const badge = anchor.querySelector('[data-xikii-translation-badge]');
+      if (!ruleFor(state.settings, linked).enabled) { badge?.remove(); continue; }
+      if (!badge) {
+        const icon = document.createElement("span"); icon.dataset['xikiiTranslationBadge'] = "true";
+        icon.textContent = "译"; icon.title = "本会话已开启翻译"; icon.setAttribute("aria-label", icon.title);
+        icon.style.cssText = 'margin-inline-start:6px;color:#a8b3ff;font-size:11px;border:1px solid currentColor;border-radius:3px;padding:0 3px';
+        anchor.append(icon);
+      }
+    }
     const rule = ruleFor(state.settings, current);
     toggle.textContent = rule.enabled ? "翻译已开启" : "翻译已关闭";
     target.value = rule.target;
@@ -68,6 +109,9 @@ export function startTranslation() {
     else if (!state.hasKey) status.textContent = "请先在翻译设置中保存 API Key。";
     if (!enabled()) return;
     const all = nodes();
+    if (state.settings.contextCount > 0) context.update(current.id, all.flatMap(node => {
+      const id = messageId(node); return id ? [{ id, text: messageText(node) }] : [];
+    }));
     // Only recently rendered messages, never request server history or hidden channels.
     for (const node of all.slice(-30)) {
       const rect = node.getBoundingClientRect();
@@ -75,15 +119,21 @@ export function startTranslation() {
       const original = messageText(node);
       if (!original.trim() || seen.get(node) === original) continue;
       seen.set(node, original);
+      showOriginal(node);
       const existing = node.nextElementSibling;
       if (existing?.hasAttribute("data-xikii-translation")) existing.remove();
       const translated = document.createElement("div"); translated.dataset['xikiiTranslation'] = "true";
       translated.style.cssText = 'white-space:pre-wrap;color:var(--text-muted,#aaa);font-size:0.9em;margin-top:5px;border-left:2px solid #7585ef;padding-left:8px';
       translated.textContent = "翻译中…"; node.after(translated);
       const version = generation;
-      void invoke<string>("translate", { id: current.id, direction: "incoming", text: original, target: "zh", context: recentContext(all, node, state.settings.contextCount) }).then(text => {
+      void translate({ id: current.id, direction: "incoming", text: original, target: "zh", context: context.before(current.id, messageId(node), state.settings.contextCount) }, partial => {
+        if (version === generation && node.isConnected && messageText(node) === original) translated.textContent = partial || "翻译中…";
+      }).then(text => {
         if (version !== generation || !node.isConnected || messageText(node) !== original) { translated.remove(); return; }
-        if (text === original) translated.remove(); else translated.textContent = text;
+        if (text === original) translated.remove(); else {
+          translated.textContent = text;
+          if (state && !state.settings.showOriginal) hideOriginal(node);
+        }
       }).catch(error => {
         if (version !== generation || !node.isConnected || messageText(node) !== original) { translated.remove(); return; }
         translated.textContent = (error instanceof Error ? error.message : "翻译失败") + " · 点击重试";
@@ -129,13 +179,17 @@ export function startTranslation() {
     clearPreview(); busy = true; status.textContent = "正在翻译，草稿会保留…"; translateButton.disabled = true;
     const version = generation;
     try {
-      const translated = await invoke<string>("translate", { id: current.id, direction: "outgoing", text: original,
-        target: ruleFor(state.settings, current).target, context: recentContext(nodes(), null, state.settings.contextCount) });
+      const translated = await translate({ id: current.id, direction: "outgoing", text: original,
+        target: ruleFor(state.settings, current).target, context: context.before(current.id, null, state.settings.contextCount) }, partial => {
+        if (version === generation && conversation(location.href)?.id === current.id && draftText(editor) === original) {
+          output.textContent = partial; output.hidden = false;
+        }
+      });
       if (version !== generation || conversation(location.href)?.id !== current.id || !editor.isConnected || draftText(editor) !== original) throw new Error("草稿或会话已变化，译文未发送，请重新翻译。");
       preview = { original, translated, editor, id: current.id, generation: version };
       output.textContent = translated; output.hidden = send.hidden = cancel.hidden = false;
       status.textContent = "预览译文；点击发送译文确认。";
-    } catch (error) { errorText(error); }
+    } catch (error) { clearPreview(); errorText(error); }
     finally { busy = false; scan(); }
     if (preview && state.settings.sendMode === "auto") await sendPreview();
   }
@@ -156,6 +210,9 @@ export function startTranslation() {
   send.addEventListener("click", event => { if (event.isTrusted) void sendPreview(); });
   cancel.addEventListener("click", event => { if (event.isTrusted) { clearPreview(); status.textContent = "预览已取消，原文草稿保留。"; } });
   document.addEventListener("keydown", event => {
+    if (event.isTrusted && event.ctrlKey && event.altKey && event.code === "KeyT") {
+      event.preventDefault(); event.stopImmediatePropagation(); void changeRule(); return;
+    }
     if (!event.isTrusted || event.key !== "Enter" || event.isComposing || event.keyCode === 229 || event.shiftKey || event.altKey) return;
     if (!(event.target instanceof HTMLElement) || !event.target.closest(composerSelector)) return;
     if (replayUntil > Date.now()) { replayUntil = 0; return; }
@@ -181,14 +238,21 @@ export function startTranslation() {
   }
   document.addEventListener("submit", interceptSubmit, true);
   document.addEventListener("click", interceptSubmit, true);
+  document.addEventListener("contextmenu", event => {
+    if (!event.isTrusted || !(event.target instanceof Element)) return;
+    const anchor = event.target.closest<HTMLAnchorElement>('a[href*="/channels/"]');
+    if (!anchor || anchor.closest('[id^="chat-messages-"]') || !conversation(anchor.href)) return;
+    event.preventDefault(); event.stopImmediatePropagation();
+    void invoke("context-menu", { url: anchor.href }).catch(errorText);
+  }, true);
   document.addEventListener("input", event => { if (preview && event.target instanceof Node && preview.editor.contains(event.target) && !busy) clearPreview(); }, true);
   const observer = new MutationObserver(records => {
-    if (records.some(record => !(record.target instanceof Element && (record.target.closest('[data-xikii-translation]') || record.target === host)))) schedule();
+    if (records.some(record => !(record.target instanceof Element && (record.target.closest('[data-xikii-translation], [data-xikii-translation-badge]') || record.target === host)))) schedule();
   });
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   document.addEventListener("scroll", schedule, true);
   const routeTimer = setInterval(() => { if (route !== location.pathname) scan(); }, 500);
   ipc.on("translation:changed", () => { void refresh(); });
-  window.addEventListener("beforeunload", () => { observer.disconnect(); clearInterval(routeTimer); if (scanTimer) clearTimeout(scanTimer); });
+  window.addEventListener("beforeunload", () => { observer.disconnect(); context.clear(); clearInterval(routeTimer); if (scanTimer) clearTimeout(scanTimer); });
   void refresh();
 }

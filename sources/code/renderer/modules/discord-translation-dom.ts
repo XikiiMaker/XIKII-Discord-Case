@@ -28,6 +28,9 @@ export function plainComposer(editor: HTMLElement): boolean {
 export function conversationMessages(document: Document, id: string): Element[] {
   return Array.from(document.querySelectorAll(messageSelector)).filter(node => node.closest(`[id^="chat-messages-${id}-"]`));
 }
+export function messageId(element: Element): string | null {
+  return /^message-content-(\d+)$/.exec(element.id)?.[1] ?? null;
+}
 export function recentContext(nodes: Element[], before: Element | null, count: number): string[] {
   if (count === 0) return [];
   const index = before ? nodes.indexOf(before) : nodes.length;

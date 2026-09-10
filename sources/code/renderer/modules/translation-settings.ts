@@ -3,12 +3,27 @@ import { languages } from "../../common/translation";
 import type { Reply, TranslationState, TranslationSettings } from "../../common/translation";
 
 export async function renderTranslationSettings() {
+  const existing = document.createElement("section"); existing.id = "webcord-client-settings";
+  existing.append(...document.body.childNodes); document.body.append(existing);
   const section = document.createElement("section");
   section.id = "xikii-translation-settings";
   const heading = document.createElement("h1"); heading.textContent = "翻译设置 · Qwen";
   const status = document.createElement("p"); status.setAttribute("role", "status");
   section.append(heading, status);
   document.body.prepend(section);
+  const tabs = document.createElement("nav"); tabs.setAttribute("role", "tablist"); tabs.setAttribute("aria-label", "客户端设置分类"); tabs.className = "xikii-settings-tabs";
+  for (const [id, label, panel] of [["translation", "翻译设置", section], ["client", "客户端设置", existing]] as const) {
+    const tab = document.createElement("button"); tab.type = "button"; tab.id = `settings-tab-${id}`;
+    tab.textContent = label; tab.setAttribute("role", "tab"); tab.setAttribute("aria-controls", panel.id);
+    tab.setAttribute("aria-selected", String(panel === section));
+    panel.setAttribute("role", "tabpanel"); panel.setAttribute("aria-labelledby", tab.id); panel.hidden = panel !== section;
+    tab.addEventListener("click", () => {
+      section.hidden = panel !== section; existing.hidden = panel !== existing;
+      for (const item of tabs.querySelectorAll("button")) item.setAttribute("aria-selected", String(item === tab));
+    });
+    tabs.append(tab);
+  }
+  document.body.prepend(tabs);
   const response = await ipc.invoke("translation:settings") as Reply<TranslationState>;
   if (!response.ok) { status.textContent = response.error; return; }
   let state = response.value;
@@ -37,6 +52,8 @@ export async function renderTranslationSettings() {
   const consent = checkbox("我同意将消息发送至阿里云，启用翻译", state.settings.consent);
   const dm = checkbox("私信默认开启翻译（含群组私信）", state.settings.dmEnabled);
   const auto = checkbox("自动发送译文（关闭时先预览）", state.settings.sendMode === "auto");
+  const showOriginal = checkbox("保留接收消息原文（关闭后仅显示成功译文）", state.settings.showOriginal);
+  const streaming = checkbox("流式显示翻译进度（完整译文校验通过后才能发送）", state.settings.streaming);
   const target = select("默认发送语言", languages, state.settings.target);
   const region = select("API 地域（必须与 Key 所属地域一致）", { china: "中国内地 · dashscope.aliyuncs.com", singapore: "新加坡 · dashscope-intl.aliyuncs.com", us: "美国 · dashscope-us.aliyuncs.com" }, state.settings.region);
   const model = text("模型（qwen-turbo / qwen-plus / qwen-max 或可用 Qwen 模型 ID）", state.settings.model);
@@ -59,7 +76,8 @@ export async function renderTranslationSettings() {
       const settings: TranslationSettings = { ...state.settings, consent: consent.checked, dmEnabled: dm.checked,
         sendMode: auto.checked ? "auto" : "preview", target: target.value as TranslationSettings['target'],
         region: region.value as TranslationSettings['region'], model: model.value.trim(),
-        contextCount: Number(context.value), concurrency: Number(concurrency.value), cacheSize: Number(cache.value) };
+        contextCount: Number(context.value), concurrency: Number(concurrency.value), cacheSize: Number(cache.value),
+        showOriginal: showOriginal.checked, streaming: streaming.checked };
       const result = await ipc.invoke("translation:save", { settings, ...(removeKey ? { key: "" } : key.value.trim() ? { key: key.value.trim() } : {}) }) as Reply<TranslationState>;
       if (!result.ok) throw new Error(result.error);
       state = result.value; key.value = ""; key.placeholder = state.hasKey ? "已安全保存" : "尚未配置";

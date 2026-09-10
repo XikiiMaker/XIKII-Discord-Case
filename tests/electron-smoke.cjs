@@ -10,6 +10,7 @@ app.setPath('userData', profile);
 app.setAppPath(root);
 app.disableHardwareAcceleration();
 let apiCalls = 0;
+let streamCalls = 0;
 let providerDelay = 15;
 const fixture = `<!doctype html><html><head><meta charset="utf-8"><style>body{background:#313338;color:white;font:16px Arial;margin:30px}main{max-width:900px}form{margin-top:30px}#editor{min-height:60px;background:#202225;padding:15px}</style></head><body><main><h1>本地 Discord 翻译适配测试</h1><ol><li id="chat-messages-123-1001"><div id="message-content-1001">Hello</div></li></ol><form><div id="editor" role="textbox" contenteditable="true" data-slate-editor="true"></div></form></main><script>window.sent=[];document.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();window.sent.push(document.getElementById('editor').innerText);document.getElementById('editor').textContent='';}});</script></body></html>`;
 const wait = ms => new Promise(resolveWait => setTimeout(resolveWait, ms));
@@ -29,6 +30,20 @@ async function main() {
       const body = JSON.parse(await request.text());
       await wait(providerDelay);
       const content = body.messages[0].content.includes('（zh）') ? '你好' : 'Hello';
+      if (body.stream) {
+        streamCalls++;
+        return new Response(new ReadableStream({ async start(controller) {
+          const encoder = new TextEncoder();
+          for (const char of content) {
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: char }, finish_reason: null }] })}\n\n`));
+            // Deliberately deliver successive stream chunks over time.
+            // oxlint-disable-next-line no-await-in-loop
+            await wait(20);
+          }
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n'));
+          controller.close();
+        } }), { headers: { 'Content-Type': 'text/event-stream' } });
+      }
       return new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content } }] }), { headers: { 'Content-Type': 'application/json' } });
     }
     return new Response('Blocked in local test', { status: 403 });
@@ -62,16 +77,33 @@ async function main() {
   attachTranslation(settings, true);
   await settings.loadFile(path.resolve(root, 'sources/assets/web/html/settings.html'));
   await until(() => settings.webContents.executeJavaScript(`!!document.querySelector('.xikii-settings-form button')`), 'settings form');
+  assert.deepEqual(await settings.webContents.executeJavaScript(`Array.from(document.querySelector('.xikii-settings-form select').options, option => option.value)`), ['en', 'zh']);
+  assert.deepEqual(await settings.webContents.executeJavaScript(`Array.from(document.querySelectorAll('[role=tabpanel]'), panel => panel.hidden)`), [false, true]);
+  await settings.webContents.executeJavaScript(`document.getElementById('settings-tab-client').click();`);
+  assert.deepEqual(await settings.webContents.executeJavaScript(`Array.from(document.querySelectorAll('[role=tabpanel]'), panel => panel.hidden)`), [true, false]);
+  await settings.webContents.executeJavaScript(`document.getElementById('settings-tab-translation').click();`);
+  settings.webContents.invalidate();
+  await wait(250);
   fs.writeFileSync(path.resolve(root, 'cache/evidence/translation-settings.png'), (await settings.webContents.capturePage()).toPNG());
   // Drive a real, trusted submit through Chromium input (no synthetic click bypass).
-  const save = await settings.webContents.executeJavaScript(`(()=>{const boxes=document.querySelectorAll('input[type=checkbox]');boxes[2].checked=true;const r=document.querySelector('button[type=submit]').getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};})()`);
+  const save = await settings.webContents.executeJavaScript(`(()=>{const boxes=document.querySelectorAll('input[type=checkbox]');boxes[2].checked=true;boxes[3].checked=false;boxes[4].checked=true;const button=document.querySelector('button[type=submit]');button.scrollIntoView({block:'center'});const r=button.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};})()`);
   settings.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...save });
   settings.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...save });
   await until(() => settings.webContents.executeJavaScript(`document.querySelector('[role=status]').textContent.includes('已保存')`), 'save settings');
+  await until(() => win.webContents.executeJavaScript(`document.getElementById('message-content-1001').style.display==='none' && document.querySelector('[data-xikii-translation]')?.textContent==='你好'`), 'streaming translation hides original only after completion');
+  await win.webContents.executeJavaScript(`const nav=document.createElement('nav');nav.innerHTML='<a href="/channels/@me/123">Test DM</a><a href="/channels/789/777">Test channel</a>';document.body.prepend(nav);`);
+  await until(() => win.webContents.executeJavaScript(`document.querySelectorAll('[data-xikii-translation-badge]').length===1`), 'enabled DM sidebar badge');
   await wait(250);
   await enter('你好，自动发送');
   await until(async () => (await win.webContents.executeJavaScript('window.sent')).length === 1, 'automatic send');
   assert.deepEqual(await win.webContents.executeJavaScript('window.sent'), ['Hello']);
+  assert(streamCalls >= 2, 'incoming and outgoing must use streaming when enabled');
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'T', modifiers: ['control', 'alt'] });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'T', modifiers: ['control', 'alt'] });
+  await until(() => win.webContents.executeJavaScript(`document.getElementById('message-content-1001').style.display==='' && document.querySelectorAll('[data-xikii-translation]').length===0 && document.querySelectorAll('[data-xikii-translation-badge]').length===0`), 'shortcut disables translation and restores original');
+  win.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'T', modifiers: ['control', 'alt'] });
+  win.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'T', modifiers: ['control', 'alt'] });
+  await until(() => win.webContents.executeJavaScript(`document.querySelector('[data-xikii-translation]')?.textContent==='你好'`), 'shortcut enables translation');
   providerDelay = 350;
   await enter('这是一条新草稿');
   await wait(100);
@@ -85,7 +117,7 @@ async function main() {
   await wait(600);
   assert.deepEqual(await win.webContents.executeJavaScript('window.sent'), ['Hello'], 'navigation during translation must not send');
   assert.equal(await win.webContents.executeJavaScript(`document.querySelectorAll('[data-xikii-translation]').length`), 0, 'old channel DOM must not receive new translations');
-  const output = { passed: ['encrypted-key-storage', 'incoming-render', 'preview-keeps-draft', 'settings-save', 'automatic-send-once', 'edited-draft-not-sent', 'navigation-not-sent', 'conversation-isolation'], apiCalls, externalNetwork: false };
+  const output = { passed: ['encrypted-key-storage', 'incoming-render', 'preview-keeps-draft', 'settings-save', 'chinese-english-options-only', 'settings-tabs', 'streaming-incoming-and-outgoing', 'hide-original-after-success', 'enabled-sidebar-badge', 'shortcut-toggle-restores-original', 'automatic-send-once', 'edited-draft-not-sent', 'navigation-not-sent', 'conversation-isolation'], apiCalls, streamCalls, externalNetwork: false };
   fs.writeFileSync(path.resolve(root, 'cache/evidence/smoke-result.json'), JSON.stringify(output, null, 2));
   console.log(JSON.stringify(output));
   settings.destroy(); win.destroy(); app.exit(0);

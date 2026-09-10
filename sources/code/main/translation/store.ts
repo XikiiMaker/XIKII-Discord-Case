@@ -1,7 +1,7 @@
 import { app, safeStorage } from "electron/main";
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { defaultTranslationSettings, isRecord, parseSettings } from "../../common/translation";
+import { defaultTranslationSettings, isRecord, parseSettings, migrateStoredSettings } from "../../common/translation";
 import type { TranslationState } from "../../common/translation";
 
 /** Separate store: upstream Config permits plaintext fallback, which API keys must not use. */
@@ -13,7 +13,7 @@ export class TranslationStore {
     if (existsSync(this.path)) {
       const data: unknown = JSON.parse(readFileSync(this.path, "utf8"));
       if (!isRecord(data) || typeof data['encryptedKey'] !== "string") throw new Error("翻译配置文件损坏。");
-      this.settings = parseSettings(data['settings']);
+      this.settings = migrateStoredSettings(data['settings']);
       this.encryptedKey = data['encryptedKey'];
     }
   }

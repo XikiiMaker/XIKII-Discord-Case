@@ -98,6 +98,7 @@ const config:ForgeConfig = {
       /cache\/?$/,
       /out\/?$/,
       /schemas\/?$/,
+      /tests\/?$/,
       /************** Files: *************/
       /\.eslintrc\.json$/,
       /tsconfig\.json$/,
@@ -126,7 +127,7 @@ const config:ForgeConfig = {
       setupMsi: `${packageJson.data.name}-squirrel-${arch}.msi`,
       noMsi: false,
       fixUpPaths: true,
-      iconUrl: `https://raw.githubusercontent.com/SpacingBat3/WebCord/${packageJson.data.version}/${iconFile}.ico`,
+      iconUrl: `https://raw.githubusercontent.com/SpacingBat3/WebCord/fb7dc4905fe7a3774187ecc183ab0b8279dd67bd/${iconFile}.ico`,
       noDelta: true
     })),
     new MakerDMG((arch) => ({
@@ -226,11 +227,11 @@ const config:ForgeConfig = {
     new PublisherGithub({
       prerelease: getBuildID() === "devel",
       repository: {
-        owner: author,
-        name: "WebCord"
+        owner: "XikiiMaker",
+        name: "XIKII-Discord-Case"
       },
       generateReleaseNotes: true,
-      draft: false
+      draft: true
     })
   ],
   plugins: [
@@ -255,7 +256,7 @@ const config:ForgeConfig = {
           type: getBuildID(),
           commit: getBuildID() === "devel" ? (await getCommit())??undefined : undefined,
           features: {
-            updateNotifications: process.env["WEBCORD_UPDATE_NOTIFICATIONS"] !== "false"
+            updateNotifications: false
           }
         };
         await writeFile(resolve(path, "buildInfo.json"), JSON.stringify(buildConfig, null, 2));

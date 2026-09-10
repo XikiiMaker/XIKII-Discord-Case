@@ -24,12 +24,13 @@ void test('routes and input boundaries reject malformed, oversized and foreign r
   assert.throws(() => parseSettings(config({ concurrency: 0 })));
   assert.throws(() => parseSettings(config({ channels: { '__bad': { enabled: true, target: 'zh' } } })));
 });
-void test('skip Chinese / only protected content but translate short foreign greetings and Japanese kana', () => {
+void test('skip Chinese / protected content / unsupported languages, translate short English greetings', () => {
   assert.equal(needsTranslation('你好！ <@123> https://example.com', 'zh'), false);
   assert.equal(needsTranslation('```js\nconst a = 1\n``` 🎉', 'zh'), false);
   assert.equal(needsTranslation('Hi', 'zh'), true);
-  assert.equal(needsTranslation('今日は元気です', 'zh'), true);
+  assert.equal(needsTranslation('今日は元気です', 'zh'), false);
   assert.equal(needsTranslation('你好 USB', 'zh'), true);
+  assert.equal(needsTranslation('你好，我们讨论 USB 接口', 'zh'), false);
 });
 void test('format tokens are lossless and refuse missing or duplicate placeholders', () => {
   const text = 'Hi <@123> <#456> <:wave:789> `x` https://example.com/a?b=1 @everyone';
@@ -71,10 +72,12 @@ void test('provider payload uses membership prompt, excludes context when disabl
   const sent = [];
   const engine = new TranslationEngine(async (url, init) => { sent.push([url, JSON.parse(init.body)]); return success('译文'); });
   await engine.translate(request('Hi', { context: ['private context'] }), config(), 'key');
-  assert.deepEqual(JSON.parse(sent[0][1].messages[1].content).context, []);
+  assert.equal(sent[0][1].messages.length, 2);
+  assert(!JSON.stringify(sent[0][1]).includes('private context'));
   assert.match(sent[0][1].messages[0].content, /产品型号、品牌名称/);
   await engine.translate(request('Hey', { context: ['a', 'b', 'c'] }), config({ contextCount: 2 }), 'key');
-  assert.deepEqual(JSON.parse(sent[1][1].messages[1].content).context, ['b', 'c']);
+  assert(sent[1][1].messages[1].content.includes('["b","c"]'));
+  assert.equal(sent[1][1].messages.at(-1).content, 'Hey');
 });
 void test('failures are not cached and raw server errors are not exposed', async () => {
   let calls = 0;
