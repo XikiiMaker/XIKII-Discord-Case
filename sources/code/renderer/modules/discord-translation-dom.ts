@@ -26,7 +26,10 @@ export function plainComposer(editor: HTMLElement): boolean {
   return !editor.querySelector('[data-slate-void="true"], [contenteditable="false"]');
 }
 export function conversationMessages(document: Document, id: string): Element[] {
-  return Array.from(document.querySelectorAll(messageSelector)).filter(node => node.closest(`[id^="chat-messages-${id}-"]`));
+  return Array.from(document.querySelectorAll(messageSelector)).filter(node => {
+    const ownId = messageId(node);
+    return ownId !== null && node.closest(`[id^="chat-messages-${id}-"]`)?.id === `chat-messages-${id}-${ownId}`;
+  });
 }
 export function messageId(element: Element): string | null {
   return /^message-content-(\d+)$/.exec(element.id)?.[1] ?? null;

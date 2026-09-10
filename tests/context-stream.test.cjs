@@ -1,7 +1,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { ConversationContext } = require('../app/code/common/translation-context.js');
-const { readTranslationStream } = require('../app/code/main/translation/stream.js');
+const { readTranslationStream, readBoundedJson } = require('../app/code/main/translation/stream.js');
 const { TranslationEngine } = require('../app/code/main/translation/engine.js');
 const { defaultTranslationSettings, parseSettings, migrateStoredSettings, languages } = require('../app/code/common/translation.js');
 const event = value => `data: ${JSON.stringify(value)}\r\n\r\n`;
@@ -68,4 +68,9 @@ void test('streaming preserves protected tokens and only caches the validated fi
   assert.equal(await engine.translate(input, opts, 'key', text => seen.push(text)), input.text);
   assert(!seen.some(text => text.includes('XIKII_')));
   assert.equal(await engine.translate(input, opts, 'key'), input.text); assert.equal(calls, 1);
+});
+void test('JSON providers are bounded without Content-Length and invalid JSON is not echoed to users', async () => {
+  await assert.rejects(readBoundedJson(stream('x'.repeat(256001), 1024)), /大小限制/);
+  const engine = new TranslationEngine(async () => new Response('PRIVATE RESPONSE CONTENT'));
+  await assert.rejects(engine.translate({ text: 'Hello', target: 'zh', context: [] }, defaultTranslationSettings, 'key'), error => /Qwen 返回无效/.test(error.message) && !error.message.includes('PRIVATE'));
 });

@@ -1,11 +1,13 @@
 import { ipcMain, net, app, Menu } from "electron/main";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
-import { conversation, isRecord, parseRequest, ruleFor, isLanguage } from "../../common/translation";
+import { conversation, isRecord, parseRequest, ruleFor, languages } from "../../common/translation";
+import type { Language } from "../../common/translation";
 import type { Reply } from "../../common/translation";
 import { TranslationEngine, sourceLanguageHint } from "./engine";
 import { TranslationStore } from "./store";
 import loadSettingsWindow from "../windows/settings";
+import { desktopState, saveDesktop, testDesktopNotification } from "../modules/desktop";
 
 const mainWindows = new Set<Electron.BrowserWindow>();
 const settingsWindows = new Set<Electron.BrowserWindow>();
@@ -43,11 +45,19 @@ function register() {
   }
   handle("state", (event) => { mainOwner(event); return config().state(); });
   handle("settings", (event) => { settingsOwner(event); return config().state(); });
+  handle("desktop-state", event => { settingsOwner(event); return desktopState(); });
+  handle("desktop-save", (event, input) => {
+    settingsOwner(event);
+    const state = saveDesktop(input);
+    if (!state.flash) for (const win of mainWindows) if (!win.isDestroyed()) win.flashFrame(false);
+    return state;
+  });
+  handle("desktop-test-notification", event => { settingsOwner(event); return testDesktopNotification([...mainWindows].find(win => !win.isDestroyed())); });
   handle("save", (event, input) => {
     settingsOwner(event);
     if (!isRecord(input)) throw new Error("设置格式无效。");
     if (!isRecord(input['settings'])) throw new Error("设置格式无效。");
-    const state = config().save({ ...input['settings'], channels: config().settings.channels }, input['key']);
+    const state = config().save({ ...input['settings'], channels: config().settings.channels }, input['key'], input['fallbackKey']);
     changed(); return state;
   });
   handle("clear-cache", (event) => { settingsOwner(event); engine.clear(); return true; });
@@ -67,17 +77,27 @@ function register() {
       { label: "使用默认会话设置", enabled: Object.hasOwn(config().settings.channels, current.id), click: () => {
         const next = structuredClone(config().settings); delete next.channels[current.id]; config().save(next); changed();
       } },
+      { label: "发送语言", submenu: (Object.entries(languages) as [Language, string][]).map(([target, label]) => ({
+        label, type: "radio", checked: rule.target === target, click: () => {
+          const next = structuredClone(config().settings);
+          next.channels[current.id] = { enabled: next.channels[current.id]?.enabled ?? current.dm, target };
+          config().save(next); changed();
+        }
+      })) },
       { type: "separator" },
       { label: "翻译设置…", click: () => { loadSettingsWindow(win); } }
     ]).popup({ window: win });
     return true;
   });
-  handle("conversation", (event, input) => {
-    const win = mainOwner(event);
-    const current = conversation(win.webContents.getURL());
-    if (!current || !isRecord(input) || input['id'] !== current.id || typeof input['enabled'] !== "boolean" || !isLanguage(input['target'])) throw new Error("会话已变化，请重试。");
+  handle("toggle-conversation", (event, input) => {
+    mainOwner(event);
+    const current = isRecord(input) && typeof input['url'] === "string" ? conversation(input['url']) : null;
+    if (!current) throw new Error("会话链接无效。");
     const settings = structuredClone(config().settings);
-    settings.channels[current.id] = { enabled: input['enabled'], target: input['target'] };
+    if (!settings.consent) throw new Error("请先到 文件 → 设置 → 翻译设置，确认启用翻译。");
+    if (current.dm && !settings.dmEnabled) throw new Error("私信翻译已全局关闭，请先在翻译设置中开启。");
+    const rule = ruleFor(settings, current);
+    settings.channels[current.id] = { enabled: !rule.enabled, target: rule.target };
     const state = config().save(settings);
     changed(); return state;
   });
@@ -97,10 +117,10 @@ function register() {
     request.target = input['direction'] === "incoming" ? "zh" : rule.target;
     const requestId = input['requestId'];
     if (requestId !== undefined && (typeof requestId !== "string" || !/^[a-zA-Z0-9-]{1,80}$/.test(requestId))) throw new Error("翻译请求标识无效。");
-    const text = await engine.translate(request, settings, config().key(), partial => {
+    const text = await engine.translate(request, settings, config().key(), (partial, provider) => {
       if (requestId && !win.isDestroyed() && conversation(win.webContents.getURL())?.id === current.id)
-        win.webContents.send("translation:progress", { requestId, text: partial });
-    });
+        win.webContents.send("translation:progress", { requestId, text: partial, provider });
+    }, settings.fallback.enabled ? config().fallbackKey() : "");
     if (win.isDestroyed() || conversation(win.webContents.getURL())?.id !== current.id) throw new Error("会话已切换，已丢弃译文。");
     return text;
   });
@@ -116,7 +136,7 @@ function register() {
   handle("send", (event, input) => {
     const win = mainOwner(event);
     const current = conversation(win.webContents.getURL());
-    if (!current || !isRecord(input) || input['id'] !== current.id || !ruleFor(config().settings, current).enabled) throw new Error("会话已变化或翻译已关闭。");
+    if (!current || !isRecord(input) || input['id'] !== current.id || (input['raw'] !== true && !ruleFor(config().settings, current).enabled)) throw new Error("会话已变化或翻译已关闭。");
     win.webContents.sendInputEvent({ type: "keyDown", keyCode: "Enter" });
     win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
     return true;

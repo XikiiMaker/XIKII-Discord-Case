@@ -79,7 +79,7 @@ function getBuildID() {
 }
 
 const config:ForgeConfig = {
-  buildIdentifier: getBuildID,
+  buildIdentifier: () => `${getBuildID()}-${packageJson.data.version}`,
   rebuildConfig: {
     disablePreGypCopy: true,
     onlyModules: []

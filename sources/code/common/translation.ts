@@ -12,21 +12,21 @@ export interface TranslationSettings {
   target: Language;
   model: string;
   region: keyof typeof endpoints;
-  sendMode: "auto" | "preview";
   contextCount: number;
   concurrency: number;
   cacheSize: number;
   showOriginal: boolean;
   streaming: boolean;
+  fallback: { enabled: boolean; endpoint: string };
   channels: Record<string, { enabled: boolean; target: Language }>;
 }
-export interface TranslationState { settings: TranslationSettings; hasKey: boolean; encryptionAvailable: boolean }
+export interface TranslationState { settings: TranslationSettings; hasKey: boolean; hasFallbackKey: boolean; encryptionAvailable: boolean }
 export interface TranslationRequest { text: string; target: Language; context: string[] }
 export type Reply<T> = { ok: true; value: T } | { ok: false; error: string };
 export const defaultTranslationSettings: TranslationSettings = {
   consent: false, dmEnabled: true, target: "en", model: "qwen-turbo", region: "china",
-  sendMode: "preview", contextCount: 0, concurrency: 2, cacheSize: 500,
-  showOriginal: true, streaming: false, channels: {}
+  contextCount: 0, concurrency: 2, cacheSize: 500,
+  showOriginal: true, streaming: false, fallback: { enabled: false, endpoint: "" }, channels: {}
 };
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -37,16 +37,30 @@ export function isLanguage(value: unknown): value is Language {
 function integer(value: unknown, min: number, max: number): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= min && value <= max;
 }
+/** Only a trusted settings page can configure the destination. Never accept credentials in URLs. */
+export function parseFallback(value: unknown): TranslationSettings['fallback'] {
+  if (value === undefined) return { enabled: false, endpoint: "" };
+  if (!isRecord(value) || typeof value['enabled'] !== "boolean" || typeof value['endpoint'] !== "string" || value['endpoint'].length > 2048)
+    throw new Error("备用引擎设置无效。");
+  const endpoint = value['endpoint'].trim();
+  if (!endpoint && !value['enabled']) return { enabled: false, endpoint: "" };
+  try {
+    const url = new URL(endpoint);
+    const local = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "[::1]";
+    if ((url.protocol !== "https:" && !(local && url.protocol === "http:")) || url.username || url.password || url.search || url.hash || !url.pathname.endsWith("/translate")) throw new Error();
+    return { enabled: value['enabled'], endpoint: url.href };
+  } catch { throw new Error("备用服务需填写完整 HTTPS /translate 地址；本机 localhost 可用 HTTP，地址不可含账号或查询参数。"); }
+}
 export function parseSettings(value: unknown): TranslationSettings {
   if (!isRecord(value) || typeof value['consent'] !== "boolean" || typeof value['dmEnabled'] !== "boolean" ||
       !isLanguage(value['target']) || typeof value['model'] !== "string" || !/^qwen-[a-zA-Z0-9.-]{1,80}$/.test(value['model']) ||
       typeof value['region'] !== "string" || !Object.hasOwn(endpoints, value['region']) ||
-      (value['sendMode'] !== "auto" && value['sendMode'] !== "preview") ||
       !integer(value['contextCount'], 0, 10) || !integer(value['concurrency'], 1, 4) ||
       !integer(value['cacheSize'], 0, 2000) || !isRecord(value['channels']) || Object.keys(value['channels']).length > 2000)
     throw new Error("翻译设置无效，请检查模型、语言和数值范围。");
   const showOriginal = value['showOriginal'] ?? true;
   const streaming = value['streaming'] ?? false;
+  const fallback = parseFallback(value['fallback']);
   if (typeof showOriginal !== "boolean" || typeof streaming !== "boolean") throw new Error("翻译显示设置无效。");
   const channels: TranslationSettings['channels'] = {};
   for (const [id, rule] of Object.entries(value['channels'])) {
@@ -56,9 +70,9 @@ export function parseSettings(value: unknown): TranslationSettings {
   }
   return {
     consent: value['consent'], dmEnabled: value['dmEnabled'], target: value['target'], model: value['model'],
-    region: value['region'] as TranslationSettings['region'], sendMode: value['sendMode'],
+    region: value['region'] as TranslationSettings['region'],
     contextCount: value['contextCount'], concurrency: value['concurrency'], cacheSize: value['cacheSize'],
-    showOriginal, streaming, channels
+    showOriginal, streaming, fallback, channels
   };
 }
 export function parseRequest(value: unknown): TranslationRequest {

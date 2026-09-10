@@ -16,6 +16,10 @@ void test('messages from a previous route are excluded even while Discord retain
   const document = dom('<li id="chat-messages-1-11"><div id="message-content-11">current</div></li><li id="chat-messages-2-22"><div id="message-content-22">other channel secret</div></li>');
   assert.deepEqual(conversationMessages(document, '1').map(messageText), ['current']);
 });
+void test('reply quotations never receive an inline translation or enter conversation context twice', () => {
+  const document = dom('<li id="chat-messages-1-11"><div id="message-content-11">original message</div></li><li id="chat-messages-1-12"><aside><span id="message-content-11">reply quotation</span></aside><div id="message-content-12">actual reply</div></li>');
+  assert.deepEqual(conversationMessages(document, '1').map(messageText), ['original message', 'actual reply']);
+});
 void test('context contains only preceding bounded messages, never target or later messages', () => {
   const document = dom('<div>A</div><div>B</div><div>C</div><div>D</div>');
   const nodes = [...document.querySelectorAll('div')];

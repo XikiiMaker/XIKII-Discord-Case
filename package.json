@@ -3,7 +3,7 @@
   "name": "xikii-discord-case",
   "productName": "XIKII Discord Case",
   "desktopName": "xikii-discord-case",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Discord client with Qwen translation, based on WebCord.",
   "main": "app/code/common/main.js",
   "scripts": {

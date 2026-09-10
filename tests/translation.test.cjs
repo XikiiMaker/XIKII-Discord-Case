@@ -6,8 +6,9 @@ const config = (patch = {}) => ({ ...structuredClone(defaultTranslationSettings)
 const request = (text = 'Hello', patch = {}) => ({ text, target: 'zh', context: [], ...patch });
 const success = text => new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: text } }] }), { status: 200 });
 
-void test('confirmed defaults: preview, no context, private messages on and channels off after consent', () => {
-  assert.equal(defaultTranslationSettings.sendMode, 'preview');
+void test('current defaults: direct send, no context, private messages on and channels off after consent', () => {
+  assert.equal(Object.hasOwn(defaultTranslationSettings, 'sendMode'), false);
+  assert.equal(Object.hasOwn(parseSettings(config({ sendMode: 'preview' })), 'sendMode'), false, 'legacy preview setting is discarded');
   assert.equal(defaultTranslationSettings.contextCount, 0);
   assert.equal(ruleFor(defaultTranslationSettings, { id: '12', dm: true }).enabled, false);
   assert.equal(ruleFor(config(), { id: '12', dm: true }).enabled, true);

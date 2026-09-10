@@ -108,4 +108,11 @@ code {
 .xikii-settings-tabs { display:flex; gap:8px; padding:12px; border-bottom:1px solid #606674; position:sticky; top:0; background:var(--color-bg-primary,#36393f); z-index:1; }
 .xikii-settings-tabs button { border:1px solid #7b8397; padding:10px 20px; border-radius:6px; background:#2b2e37; color:white; cursor:pointer; }
 .xikii-settings-tabs [aria-selected=true] { background:#5865f2; }
+.xikii-settings-form { color-scheme:dark; line-height:1.6; }
+.xikii-settings-form button, .xikii-settings-field select, .xikii-settings-field input:not([type=checkbox]) { background:#2b2d31; color:#dbdee1; border:1px solid #4e5058; border-radius:5px; font:inherit; }
+.xikii-settings-form button { cursor:pointer; }
+.xikii-settings-form button:hover { background:#404249; }
+.xikii-settings-form button:disabled { opacity:.5; cursor:default; }
+.xikii-settings-field input[type=checkbox] { accent-color:#5865f2; }
+@media(max-width:650px) { .xikii-settings-field { gap:12px; flex-wrap:wrap; } .xikii-settings-field input:not([type=checkbox]), .xikii-settings-field select { width:100%; max-width:100%; min-width:0; } }
 [role=tabpanel][hidden] { display:none !important; }

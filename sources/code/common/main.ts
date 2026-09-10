@@ -32,6 +32,7 @@ import { getBuildInfo } from "./modules/client";
 import { getRecommendedGPUFlags, getRecommendedOSFlags } from "../main/modules/optimize";
 import { styles } from "../main/modules/extensions";
 import { parseArgs, ParseArgsConfig, stripVTControlCharacters, debug } from "util";
+import { ensureNotificationShortcut, installSessionPersistence } from "../main/modules/desktop";
 
 const argvConfig = Object.freeze(({
   options: Object.freeze({
@@ -356,6 +357,8 @@ function main(): void {
     overwriteMain();
   } else {
     // Run app normally
+    installSessionPersistence();
+    try { ensureNotificationShortcut(); } catch (error) { commonCatches.print(error); }
     const updateInterval = setInterval(() => {
       checkVersion(updateInterval).catch(commonCatches.print);
     }, 30/*min*/*60000);

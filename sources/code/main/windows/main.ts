@@ -23,6 +23,7 @@ import L10N from "../../common/modules/l10n";
 import { loadChromiumExtensions, styles } from "../modules/extensions";
 import { commonCatches } from "../modules/error";
 import { attachTranslation } from "../translation/ipc";
+import { unreadFromTitle, shouldFlash } from "../../common/desktop";
 
 import type { PartialRecursive } from "../../common/global";
 import { nativeImage } from "electron/common";
@@ -43,6 +44,8 @@ const headerCallback: Parameters<Electron.WebRequest["onHeadersReceived"]>[0] = 
 
 export default function createMainWindow(...flags:MainWindowFlags): BrowserWindow {
   const l10nStrings = new L10N().client;
+  // Never hide a startup window when the tray is unavailable.
+  flags[0] = flags[0] && !appConfig.value.settings.general.tray.disable;
 
   const internalWindowEvents = new EventEmitter();
 
@@ -219,6 +222,7 @@ export default function createMainWindow(...flags:MainWindowFlags): BrowserWindo
       }
     };
     win.webContents.session.setPermissionCheckHandler((webContents, permission, requestingOrigin, details) => {
+      if (permission === "notifications" && (!details.isMainFrame || requestingOrigin !== trustedURLs[0])) return false;
       const requestUrl = (webContents !== null && webContents.getURL() !== "" ? webContents.getURL() : requestingOrigin);
       const returnValue = permissionHandler("check",requestUrl,permission,details);
       if(returnValue === null) {
@@ -232,6 +236,11 @@ export default function createMainWindow(...flags:MainWindowFlags): BrowserWindo
       return returnValue;
     });
     win.webContents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
+      if (permission === "notifications") {
+        try {
+          if (!details.isMainFrame || new URL(details.requestingUrl).origin !== trustedURLs[0]) { callback(false); return; }
+        } catch { callback(false); return; }
+      }
       type nullPermissions = "video"|"audio"|"notifications";
       const dialogLock = new Set<nullPermissions>();
       async function permissionDialog(perm:nullPermissions) {
@@ -333,7 +342,8 @@ export default function createMainWindow(...flags:MainWindowFlags): BrowserWindo
   else
     throw new TypeError("'repository' in package.json is not of type 'object'.");
 
-  let lastStatus:boolean|null = null;
+  let lastUnread: string | boolean | undefined;
+  win.on("focus", () => win.flashFrame(false));
   const pluralRules = new Intl.PluralRules();
   // Window Title & "red dot" icon feature
   win.on("page-title-updated", (event, title) => {
@@ -342,20 +352,18 @@ export default function createMainWindow(...flags:MainWindowFlags): BrowserWindo
       // Wrap new title style!
       const sections = title.split("|");
       const [dirty,client,section,group] = [
-        (sections[0]?.includes("•")??false)
-          ? true
-          : (sections[0]?.includes("(")??false)
-            ? sections[0]?.match(/\(([0-9]+)\)/)?.[1] ?? "m"
-            : false,
+        unreadFromTitle(title),
         app.getName(),
         sections[1]?.trim() ?? "",
         sections[2]?.trim() ?? null
       ];
       // Fetch status for ping and title from current title
-      const flash = typeof dirty === "string";
-      const status = flash || (dirty ? false : null);
       win.setTitle((typeof dirty === "string" ? `[${dirty}] ` : dirty ? "*" : "") + client + " - " + section + (group !== null ? " (" + group + ")" : ""));
-      if (lastStatus === status || (lastStatus = status,!tray)) return;
+      if (typeof dirty !== "string" || win.isFocused() || !appConfig.value.settings.general.taskbar.flash) win.flashFrame(false);
+      else if (shouldFlash(dirty, lastUnread, appConfig.value.settings.general.taskbar.flash, win.isFocused())) win.flashFrame(true);
+      if (dirty === lastUnread) return;
+      lastUnread = dirty;
+      if (!tray) return;
       // Set tray icon and taskbar flash
       let icon: Electron.NativeImage, tooltipSuffix="";
       switch(typeof dirty) {
@@ -372,7 +380,6 @@ export default function createMainWindow(...flags:MainWindowFlags): BrowserWindo
         icon = icon.resize({height:22});
       tray.setImage(icon);
       tray.setToolTip(`${app.getName()}${tooltipSuffix}`);
-      win.flashFrame(flash&&appConfig.value.settings.general.taskbar.flash);
     }
     else if (title.includes("Discord") && !/[0-9]+/.test(win.webContents.getURL()))
       win.setTitle(title.replace("Discord",app.getName()));
