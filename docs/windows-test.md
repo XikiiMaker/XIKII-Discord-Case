@@ -13,10 +13,10 @@ npm run make -- --platform win32 --arch x64
 
 生成位置：
 
-- ZIP：`out/release-0.1.2/make/zip/win32/x64/XIKII Discord Case-win32-x64-0.1.2.zip`。
-- EXE 安装包：`out/release-0.1.2/make/squirrel.windows/x64/xikii-discord-case-squirrel-x64.exe`。
+- ZIP：`out/release-0.1.3/make/zip/win32/x64/XIKII Discord Case-win32-x64-0.1.3.zip`。
+- EXE 安装包：`out/release-0.1.3/make/squirrel.windows/x64/xikii-discord-case-squirrel-x64.exe`。
 - MSI：同目录的 `xikii-discord-case-squirrel-x64.msi`。
-- 已解包客户端：`out/release-0.1.2/XIKII Discord Case-win32-x64/xikii-discord-case.exe`。
+- 已解包客户端：`out/release-0.1.3/XIKII Discord Case-win32-x64/xikii-discord-case.exe`。
 
 先从托盘彻底退出旧版，再运行新包，否则单实例机制会唤起旧版窗口。登录和设置沿用原配置目录。测试可直接运行已解包客户端；分发 ZIP 时应完整解压，保留同目录资源。当前包用于联调，安装/卸载及真实 Discord 兼容性还未验收。
 

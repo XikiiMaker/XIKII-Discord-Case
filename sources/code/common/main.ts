@@ -3,11 +3,10 @@
  *              into one place.
  */
 
-// Dirty-close on Squirrel without doing anything.
-if(process.platform === "win32" && (process.argv[1]?.startsWith("--squirrel-")??false)) {
-  console.log("Detected --squirrel-* option, possibly application's being run during installation, aborting...");
-  process.exit();
-}
+// Installer events must finish before loading configuration or taking the app lock.
+import { handleInstallerEvent } from "../main/modules/installer";
+const installerExitCode = handleInstallerEvent();
+if (installerExitCode !== null) process.exit(installerExitCode);
 
 // Handle source maps.
 import { install } from "source-map-support";
