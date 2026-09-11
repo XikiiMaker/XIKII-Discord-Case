@@ -67,7 +67,7 @@ void test('settings cancellation prevents failover and aborts an active fallback
     return new Promise((_resolve, reject) => init.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true }));
   });
   const pending = blocked.translate(request, config, 'key');
-  const rejected = assert.rejects(pending, /取消/); blocked.clear(); await rejected;
+  const rejected = assert.rejects(pending, /取消/); blocked.cancel(); await rejected;
   assert.equal(calls.length, 1);
   let reached;
   const entered = new Promise(resolve => { reached = resolve; });
@@ -78,7 +78,15 @@ void test('settings cancellation prevents failover and aborts an active fallback
   });
   const inFallback = engine.translate(request, config, 'key');
   await entered;
-  const cancelled = assert.rejects(inFallback, /备用翻译已取消/); engine.clear(); await cancelled;
+  const cancelled = assert.rejects(inFallback, /备用翻译已取消/); engine.cancel(); await cancelled;
+});
+void test('fallback translations stay out of the persisted cache', async () => {
+  const disk = new Map();
+  const persistence = { get: hash => disk.get(hash), set: (hash, entry) => { disk.set(hash, entry); }, clear: () => { disk.clear(); } };
+  const engine = new TranslationEngine(async url => url === config.fallback.endpoint ? fallback() : failure(), persistence);
+  assert.equal(await engine.translate(request, config, 'key'), '你好 <@123> https://example.com `USB-C`');
+  // A degraded result must expire quickly in memory, never outlive a restart.
+  assert.equal(disk.size, 0);
 });
 void test('a failed Qwen stream is discarded before switching provider', async () => {
   const progress = [];

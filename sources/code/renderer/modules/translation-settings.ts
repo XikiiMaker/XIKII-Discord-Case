@@ -103,5 +103,5 @@ export async function renderTranslationSettings() {
   form.addEventListener("submit", (event) => { event.preventDefault(); if (event.isTrusted) void persist(); });
   remove.addEventListener("click", (event) => { if (event.isTrusted) void persist("qwen"); });
   removeFallback.addEventListener("click", (event) => { if (event.isTrusted) void persist("fallback"); });
-  clear.addEventListener("click", (event) => { if (event.isTrusted) void ipc.invoke("translation:clear-cache").then(() => { status.textContent = "内存缓存已清空。"; }); });
+  clear.addEventListener("click", (event) => { if (event.isTrusted) void ipc.invoke("translation:clear-cache").then(() => { status.textContent = "译文缓存已清空，含已保存到本机的部分。"; }); });
 }

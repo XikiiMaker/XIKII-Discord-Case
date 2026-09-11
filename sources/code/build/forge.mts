@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { readFile, writeFile, rm } from "node:fs/promises";
 import { FuseVersion, FuseV1Options } from "@electron/fuses";
+import type { SignToolOptions } from "@electron/windows-sign";
 import type { ForgeConfig } from "@electron-forge/shared-types";
 
 import { Person, PackageJSON } from "../common/modules/package.js";
@@ -45,6 +46,33 @@ const author = packageJson.data.author !== undefined ? new Person(packageJson.da
 const iconFile = "sources/assets/icons/app";
 const desktopGeneric = "Internet Messenger";
 const desktopCategories = (["Network", "InstantMessaging"] as unknown as ["Network"]);
+
+/**
+ * Unsigned Electron binaries get quarantined by Defender's behaviour monitoring
+ * once the app touches autostart registry keys or Start Menu shortcuts.
+ * Set XIKII_SIGN_THUMBPRINT to a code signing certificate in the local store.
+ */
+const signThumbprint = process.env["XIKII_SIGN_THUMBPRINT"];
+const signTimestamp = process.env["XIKII_SIGN_TIMESTAMP"] ?? "http://timestamp.digicert.com";
+const windowsSign = signThumbprint === undefined ? undefined : {
+  signWithParams: ["/sha1", signThumbprint],
+  automaticallySelectCertificate: false,
+  // `cross-dirname` truncates the bundled signtool path at spaces, so pass it explicitly.
+  signToolPath: resolve(projectPath, "node_modules/@electron/windows-sign/vendor/signtool.exe"),
+  // SHA-1 is skipped because it needs the legacy timestamp protocol; `never[]`
+  // satisfies both the CJS and ESM `HASHES` enums, which are nominally distinct.
+  hashes: ["sha256"] as unknown as never[],
+  timestampServer: signTimestamp,
+  description: "XIKII Discord Case"
+} satisfies SignToolOptions;
+
+/**
+ * `electron-winstaller`'s `windowsSign` route swaps its vendored signtool.exe for a
+ * Node SEA stand-in that resolves paths through `cross-dirname`, which breaks on the
+ * space in this project's path. The legacy parameters reach the real signtool directly.
+ */
+const squirrelSignWithParams = signThumbprint === undefined ? undefined
+  : `/sha1 ${signThumbprint} /fd sha256 /tr ${signTimestamp} /td sha256`;
 
 // Some custom functions
 
@@ -115,7 +143,8 @@ const config:ForgeConfig = {
     osxUniversal: {
       mergeASARs: true
     },
-    osxSign: true
+    osxSign: true,
+    ...(windowsSign === undefined ? {} : { windowsSign })
   },
   makers: [
     /* === STABLE MAKERS: === */
@@ -128,7 +157,8 @@ const config:ForgeConfig = {
       noMsi: false,
       fixUpPaths: true,
       iconUrl: `https://raw.githubusercontent.com/SpacingBat3/WebCord/fb7dc4905fe7a3774187ecc183ab0b8279dd67bd/${iconFile}.ico`,
-      noDelta: true
+      noDelta: true,
+      ...(squirrelSignWithParams === undefined ? {} : { signWithParams: squirrelSignWithParams })
     })),
     new MakerDMG((arch) => ({
       // See: https://github.com/electron/forge/issues/3517

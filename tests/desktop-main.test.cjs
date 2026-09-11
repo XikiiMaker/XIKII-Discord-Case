@@ -19,11 +19,15 @@ function fixture() {
   }
   const session = { defaultSession: { storagePath: 'persistent-fixture', flushStorageData() { session.flushed = true; }, cookies: { async flushStore() { session.cookiesFlushed = true; } } } };
   const module = { exports: {} };
+  const shortcutLink = { current: null };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../app/code/main/modules/desktop.js'), 'utf8'), {
     exports: module.exports, module, process: { platform: 'win32', execPath: 'C:\\Client\\app-0.1.1\\client.exe' }, console, setTimeout, clearTimeout,
     require(id) {
       if (id === 'electron/main') return { app, session, Notification };
-      if (id === 'electron/common') return { shell: { writeShortcutLink(...args) { shortcuts.push(args); return true; } } };
+      if (id === 'electron/common') return { shell: {
+        writeShortcutLink(...args) { shortcuts.push(args); shortcutLink.current = { ...args[2] }; return true; },
+        readShortcutLink() { if (shortcutLink.current === null) throw new Error('not a shortcut'); return shortcutLink.current; }
+      } };
       if (id === 'node:fs') return { existsSync: () => true, mkdirSync() {} };
       if (id === 'node:path') return path.win32;
       if (id === './config') return { appConfig: config };
@@ -31,7 +35,7 @@ function fixture() {
       throw new Error(`Unexpected dependency: ${id}`);
     }
   });
-  return { api: module.exports, app, session, config, writes, shortcuts, Notification };
+  return { api: module.exports, app, session, config, writes, shortcuts, shortcutLink, Notification };
 }
 void test('startup uses stable Squirrel launcher, matching read options, and can be disabled', () => {
   const f = fixture();
@@ -47,6 +51,19 @@ void test('startup uses stable Squirrel launcher, matching read options, and can
   assert.equal(f.api.saveDesktop({ openAtLogin: false, notifications: null, flash: true }).openAtLogin, false);
   assert.equal(f.writes[1].enabled, false);
   assert.throws(() => f.api.saveDesktop({ openAtLogin: 'true', notifications: true, flash: true }));
+});
+void test('start menu shortcut is only rewritten when it stops matching the launcher', () => {
+  const f = fixture();
+  f.api.ensureNotificationShortcut();
+  assert.equal(f.shortcuts.length, 1);
+  assert.equal(f.shortcuts[0][2].target, 'C:\\Client\\client.exe');
+  f.api.ensureNotificationShortcut();
+  f.api.ensureNotificationShortcut();
+  assert.equal(f.shortcuts.length, 1, 'repeated launches must not rewrite the shortcut');
+  f.shortcutLink.current.target = 'C:\\Stale\\client.exe';
+  f.api.ensureNotificationShortcut();
+  assert.equal(f.shortcuts.length, 2, 'a stale target must be corrected');
+  assert.equal(f.shortcuts[1][2].target, 'C:\\Client\\client.exe');
 });
 void test('development startup refuses registration and failed OS persistence is reported', () => {
   const f = fixture(); f.app.isPackaged = false;

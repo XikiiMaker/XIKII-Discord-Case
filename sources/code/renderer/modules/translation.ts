@@ -12,6 +12,17 @@ async function invoke<T>(name: string, input?: unknown): Promise<T> {
   if (!result.ok) throw new Error(result.error);
   return result.value;
 }
+/** The original text is part of the key, so an edited message is translated again. */
+function messageKey(node: Element, original: string) {
+  const id = messageId(node);
+  return id === null ? null : `${id}\u0000${original}`;
+}
+function translationNode() {
+  const node = document.createElement("div");
+  node.dataset['xikiiTranslation'] = "true";
+  node.lang = "zh-CN"; node.style.cssText = incomingTranslationStyle;
+  return node;
+}
 export function startTranslation() {
   if (location.origin !== "https://discord.com" || window !== window.top) return;
   let state: TranslationState | undefined;
@@ -19,6 +30,23 @@ export function startTranslation() {
   let replayUntil = 0, dispatchingSend = false;
   let seen = new WeakMap<Element, string>();
   let scanTimer: ReturnType<typeof setTimeout> | undefined;
+  // Survives route changes so returning to a channel neither re-renders nor re-requests.
+  const remembered = new Map<string, string>();
+  const rememberLimit = 3000;
+  function remember(key: string, text: string) {
+    remembered.delete(key); remembered.set(key, text);
+    while (remembered.size > rememberLimit) {
+      const oldest = remembered.keys().next().value;
+      if (oldest === undefined) break;
+      remembered.delete(oldest);
+    }
+  }
+  function recall(key: string) {
+    const text = remembered.get(key);
+    if (text === undefined) return undefined;
+    remembered.delete(key); remembered.set(key, text);
+    return text;
+  }
   const context = new ConversationContext();
   const notice = createTranslationNotice(document);
   const progressListeners = new Map<string, (text: string, provider?: string) => void>();
@@ -52,7 +80,8 @@ export function startTranslation() {
     for (const node of hiddenOriginals.keys()) showOriginal(node);
     for (const node of document.querySelectorAll('[data-xikii-translation]')) node.remove();
   }
-  async function refresh() {
+  async function refresh(invalidate = false) {
+    if (invalidate) remembered.clear();
     try { state = await invoke<TranslationState>("state"); context.clear(); reset(); scan(); }
     catch (error) { errorText(error); }
   }
@@ -83,17 +112,31 @@ export function startTranslation() {
       seen.set(node, original); showOriginal(node);
       const existing = node.nextElementSibling;
       if (existing?.hasAttribute("data-xikii-translation")) existing.remove();
-      const translated = document.createElement("div"); translated.dataset['xikiiTranslation'] = "true";
-      translated.lang = "zh-CN"; translated.style.cssText = incomingTranslationStyle;
+      const key = messageKey(node, original);
+      const known = key === null ? undefined : recall(key);
+      if (known !== undefined) {
+        if (known !== original) {
+          const restored = translationNode();
+          restored.textContent = known; node.after(restored);
+          if (!state.settings.showOriginal) hideOriginal(node);
+        }
+        continue;
+      }
+      const translated = translationNode();
       translated.textContent = "翻译中…"; node.after(translated);
       // Outgoing cancellation must not invalidate independent incoming messages.
       const currentRoute = location.pathname;
+      let resultProvider: string | undefined;
       void translate({ id: current.id, direction: "incoming", text: original, target: "zh", context: context.before(current.id, messageId(node), state.settings.contextCount) }, (partial, provider) => {
+        resultProvider = provider;
         if (translated.isConnected && location.pathname === currentRoute && messageText(node) === original) {
           translated.textContent = partial || (provider === "libretranslate" ? "备用引擎翻译中…" : "翻译中…");
           translated.title = provider === "libretranslate" ? "译文来自备用引擎 LibreTranslate" : "译文来自 Qwen";
         }
       }).then(text => {
+        // Already paid for: keep it even if the user navigated away mid-request.
+        // Degraded fallback output is excluded so the primary engine gets retried.
+        if (key !== null && resultProvider !== "libretranslate") remember(key, text);
         if (!translated.isConnected || location.pathname !== currentRoute || !node.isConnected || messageText(node) !== original) { translated.remove(); return; }
         if (text === original) translated.remove(); else {
           translated.textContent = text;
@@ -207,7 +250,9 @@ export function startTranslation() {
   observer.observe(document.body, { childList: true, subtree: true, characterData: true });
   document.addEventListener("scroll", schedule, true);
   const routeTimer = setInterval(() => { if (route !== location.pathname) scan(); }, 500);
-  ipc.on("translation:changed", () => { void refresh(); });
+  ipc.on("translation:changed", (_event, payload: unknown) => {
+    void refresh(isRecord(payload) && payload['invalidate'] === true);
+  });
   window.addEventListener("beforeunload", () => { observer.disconnect(); context.clear(); notice.destroy(); clearInterval(routeTimer); if (scanTimer) clearTimeout(scanTimer); });
   void refresh();
 }

@@ -2,10 +2,11 @@ import { ipcMain, net, app, Menu } from "electron/main";
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 import { conversation, isRecord, parseRequest, ruleFor, languages } from "../../common/translation";
-import type { Language } from "../../common/translation";
+import type { Language, TranslationSettings } from "../../common/translation";
 import type { Reply } from "../../common/translation";
 import { TranslationEngine, sourceLanguageHint } from "./engine";
 import { TranslationStore } from "./store";
+import { TranslationCacheStore } from "./cache-store";
 import loadSettingsWindow from "../windows/settings";
 import { desktopState, saveDesktop, testDesktopNotification } from "../modules/desktop";
 
@@ -13,7 +14,8 @@ const mainWindows = new Set<Electron.BrowserWindow>();
 const settingsWindows = new Set<Electron.BrowserWindow>();
 let store: TranslationStore | undefined;
 let registered = false;
-const engine = new TranslationEngine((url, init) => net.fetch(url, init));
+const cacheStore = new TranslationCacheStore();
+const engine = new TranslationEngine((url, init) => net.fetch(url, init), cacheStore);
 function config() { return store ??= new TranslationStore(); }
 function owner(event: Electron.IpcMainInvokeEvent, windows: Set<Electron.BrowserWindow>) {
   for (const win of windows)
@@ -25,9 +27,12 @@ function mainOwner(event: Electron.IpcMainInvokeEvent) {
   if (new URL(event.senderFrame?.url ?? "about:blank").origin !== "https://discord.com") throw new Error("翻译仅支持 Discord 主页面。");
   return win;
 }
-function changed() {
-  engine.clear();
-  for (const win of mainWindows) if (!win.isDestroyed()) win.webContents.send("translation:changed");
+/** Only these settings change what a finished translation looks like. */
+function outputIdentity(settings: TranslationSettings) {
+  return JSON.stringify([settings.model, settings.region, settings.contextCount, settings.fallback]);
+}
+function notifyRenderers(invalidate = false) {
+  for (const win of mainWindows) if (!win.isDestroyed()) win.webContents.send("translation:changed", { invalidate });
 }
 function handle(name: string, callback: (event: Electron.IpcMainInvokeEvent, input: unknown) => unknown) {
     ipcMain.handle(`translation:${name}`, async (event, input: unknown): Promise<Reply<unknown>> => {
@@ -57,10 +62,12 @@ function register() {
     settingsOwner(event);
     if (!isRecord(input)) throw new Error("设置格式无效。");
     if (!isRecord(input['settings'])) throw new Error("设置格式无效。");
+    const before = outputIdentity(config().settings);
     const state = config().save({ ...input['settings'], channels: config().settings.channels }, input['key'], input['fallbackKey']);
-    changed(); return state;
+    const invalidate = before !== outputIdentity(config().settings) || input['key'] !== undefined || input['fallbackKey'] !== undefined;
+    engine.cancel(); notifyRenderers(invalidate); return state;
   });
-  handle("clear-cache", (event) => { settingsOwner(event); engine.clear(); return true; });
+  handle("clear-cache", (event) => { settingsOwner(event); engine.clearCache(); notifyRenderers(true); return true; });
   handle("context-menu", (event, input) => {
     const win = mainOwner(event);
     if (!isRecord(input) || typeof input['url'] !== "string") throw new Error("会话链接无效。");
@@ -70,18 +77,18 @@ function register() {
     const apply = (enabled: boolean) => {
       const next = structuredClone(config().settings);
       next.channels[current.id] = { enabled, target: rule.target };
-      config().save(next); changed();
+      config().save(next); notifyRenderers();
     };
     Menu.buildFromTemplate([
       { label: rule.enabled ? "关闭本会话翻译" : "开启本会话翻译", enabled: config().settings.consent && (!current.dm || config().settings.dmEnabled), click: () => apply(!rule.enabled) },
       { label: "使用默认会话设置", enabled: Object.hasOwn(config().settings.channels, current.id), click: () => {
-        const next = structuredClone(config().settings); delete next.channels[current.id]; config().save(next); changed();
+        const next = structuredClone(config().settings); delete next.channels[current.id]; config().save(next); notifyRenderers();
       } },
       { label: "发送语言", submenu: (Object.entries(languages) as [Language, string][]).map(([target, label]) => ({
         label, type: "radio", checked: rule.target === target, click: () => {
           const next = structuredClone(config().settings);
           next.channels[current.id] = { enabled: next.channels[current.id]?.enabled ?? current.dm, target };
-          config().save(next); changed();
+          config().save(next); notifyRenderers();
         }
       })) },
       { type: "separator" },
@@ -99,7 +106,7 @@ function register() {
     const rule = ruleFor(settings, current);
     settings.channels[current.id] = { enabled: !rule.enabled, target: rule.target };
     const state = config().save(settings);
-    changed(); return state;
+    notifyRenderers(); return state;
   });
   handle("translate", async (event, input) => {
     const win = mainOwner(event);
@@ -146,10 +153,11 @@ function register() {
     win.webContents.sendInputEvent({ type: "keyUp", keyCode: "Enter" });
     return true;
   });
+  app.on("before-quit", () => { cacheStore.flush(); });
 }
 export function attachTranslation(win: Electron.BrowserWindow, settings = false) {
   register();
   const windows = settings ? settingsWindows : mainWindows;
   windows.add(win);
-  win.once("closed", () => { windows.delete(win); if (!settings) engine.clear(); });
+  win.once("closed", () => { windows.delete(win); if (!settings) { engine.cancel(); cacheStore.flush(); } });
 }
