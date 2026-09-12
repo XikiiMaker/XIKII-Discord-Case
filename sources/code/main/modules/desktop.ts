@@ -31,8 +31,11 @@ export function saveDesktop(input: unknown): DesktopState {
   const data = input as Record<string, unknown>;
   if (typeof data['openAtLogin'] !== "boolean" || typeof data['flash'] !== "boolean" || !(data['notifications'] === null || typeof data['notifications'] === "boolean")) throw new Error("客户端设置格式无效。");
   if (process.platform === "win32" && app.isPackaged) {
-    app.setLoginItemSettings({ ...loginOptions(), name: startupName, openAtLogin: data['openAtLogin'], enabled: data['openAtLogin'] });
-    if (desktopState().openAtLogin !== data['openAtLogin']) throw new Error("Windows 未保存开机启动设置，请检查系统启动应用设置。");
+    // Only touch the autostart registry key when the value actually changes.
+    if (desktopState().openAtLogin !== data['openAtLogin']) {
+      app.setLoginItemSettings({ ...loginOptions(), name: startupName, openAtLogin: data['openAtLogin'], enabled: data['openAtLogin'] });
+      if (desktopState().openAtLogin !== data['openAtLogin']) throw new Error("Windows 未保存开机启动设置，请检查系统启动应用设置。");
+    }
   } else if (data['openAtLogin']) throw new Error("请在 Windows 打包版中设置开机启动。");
   const config = appConfig.value;
   config.settings.privacy.permissions.notifications = data['notifications'];
@@ -45,12 +48,18 @@ export function saveDesktop(input: unknown): DesktopState {
 export function ensureNotificationShortcut() {
   if (process.platform !== "win32" || !app.isPackaged) return;
   const directory = resolve(app.getPath("appData"), "Microsoft/Windows/Start Menu/Programs");
-  mkdirSync(directory, { recursive: true });
   const shortcut = resolve(directory, `${startupName}.lnk`);
   const target = launcherPath();
-  if (!shell.writeShortcutLink(shortcut, existsSync(shortcut) ? "update" : "create", {
-    target, cwd: dirname(target), description: "XIKII Discord Case",
-    appUserModelId: getBuildInfo().AppUserModelId ?? "XikiiMaker.DiscordCase"
+  const appUserModelId = getBuildInfo().AppUserModelId ?? "XikiiMaker.DiscordCase";
+  const exists = existsSync(shortcut);
+  // Rewriting this shortcut on every launch reads as persistence to Defender.
+  if (exists) try {
+    const current = shell.readShortcutLink(shortcut);
+    if (current.target === target && current.appUserModelId === appUserModelId) return;
+  } catch { /* unreadable shortcut is rewritten below */ }
+  mkdirSync(directory, { recursive: true });
+  if (!shell.writeShortcutLink(shortcut, exists ? "update" : "create", {
+    target, cwd: dirname(target), description: "XIKII Discord Case", appUserModelId
   })) throw new Error("无法注册 Windows 通知快捷方式。");
 }
 

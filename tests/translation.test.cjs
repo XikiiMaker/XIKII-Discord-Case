@@ -58,10 +58,32 @@ void test('LRU eviction and disabled cache work', async () => {
   // oxlint-disable-next-line no-await-in-loop
   for (const text of ['a', 'b', 'a', 'c', 'b']) await engine.translate(request(text), config({ cacheSize: 2 }), 'key');
   assert.equal(calls, 4);
-  engine.clear();
+  engine.clearCache();
   await engine.translate(request(), config({ cacheSize: 0 }), 'key');
   await engine.translate(request(), config({ cacheSize: 0 }), 'key');
   assert.equal(calls, 6);
+});
+void test('paid translations survive cancellation and restarts, and only a manual clear wipes them', async () => {
+  let calls = 0;
+  const disk = new Map();
+  const persistence = { get: hash => disk.get(hash), set: (hash, entry) => { disk.set(hash, entry); }, clear: () => { disk.clear(); } };
+  const fetcher = async () => { calls++; return success('译文'); };
+  const engine = new TranslationEngine(fetcher, persistence);
+  await engine.translate(request(), config(), 'key');
+  assert.equal(calls, 1);
+  assert.equal(disk.size, 1, 'a Qwen result must reach the persistence layer');
+  // Toggling a channel or closing a window cancels in-flight work only.
+  engine.cancel();
+  await engine.translate(request(), config(), 'key');
+  assert.equal(calls, 1, 'cancelling must not discard finished translations');
+  // A restart starts with an empty memory cache but can still read the persisted entry.
+  const restarted = new TranslationEngine(fetcher, persistence);
+  await restarted.translate(request(), config(), 'key');
+  assert.equal(calls, 1, 'a restart must reuse the persisted translation');
+  restarted.clearCache();
+  assert.equal(disk.size, 0, 'a manual clear must wipe the persisted copy too');
+  await restarted.translate(request(), config(), 'key');
+  assert.equal(calls, 2);
 });
 void test('queue enforces concurrency, then drains successfully', async () => {
   let active = 0, maximum = 0;
@@ -96,7 +118,7 @@ void test('reset cancels active and queued work without refilling the cache', as
   const first = engine.translate(request('first'), config({ concurrency: 1 }), 'key');
   const second = engine.translate(request('second'), config({ concurrency: 1 }), 'key');
   const rejected = Promise.all([assert.rejects(first, /取消/), assert.rejects(second, /设置已变化/)]);
-  engine.clear(); await rejected;
+  engine.cancel(); await rejected;
 });
 void test('queue overflow fails promptly instead of scheduling unlimited spending', async () => {
   let release;

@@ -3,7 +3,7 @@
   "name": "xikii-discord-case",
   "productName": "XIKII Discord Case",
   "desktopName": "xikii-discord-case",
-  "version": "0.1.3",
+  "version": "0.1.5",
   "description": "Discord client with Qwen translation, based on WebCord.",
   "main": "app/code/common/main.js",
   "scripts": {
@@ -21,7 +21,8 @@
     "test:translation": "tsc && node --test tests/*.test.cjs",
     "test:electron": "tsc && electron tests/electron-smoke.cjs",
     "test:slate": "tsc && electron tests/electron-slate.cjs",
-    "test:session": "tsc && electron tests/electron-session.cjs write && electron tests/electron-session.cjs read"
+    "test:session": "tsc && electron tests/electron-session.cjs write && electron tests/electron-session.cjs read",
+    "test:cache": "tsc && electron tests/electron-translation-cache.cjs"
   },
   "author": {
     "name": "SpacingBat3",
@@ -50,6 +51,7 @@
     "@electron-forge/plugin-fuses": "^7.1.0",
     "@electron-forge/publisher-github": "^7.1.0",
     "@electron/fuses": "^1.5.0",
+    "@electron/windows-sign": "^1.2.2",
     "@reforged/maker-appimage": "^5.0.0",
     "@tsconfig/strictest": "^2.0.0",
     "@types/node": "^20.16.1",
