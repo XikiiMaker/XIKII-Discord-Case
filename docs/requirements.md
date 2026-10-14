@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | Qwen API 接入 | 通过 DashScope SDK 或 REST API 调用 | P0 |
 | API Key 配置 | 设置面板输入，Electron safeStorage 加密存储 | P0 |
-| 模型选择 | 支持 qwen-turbo、qwen-plus、qwen-max 等；接入时核对可用性 | P1 |
+| 模型选择 | 默认 qwen-flash，支持其他可用 Qwen 模型 ID；接入时核对可用性并提示已公告下线的旧模型 | P1 |
 | Prompt 模板 | 翻译专用 System Prompt，优先核对并复用 xikii 实现 | P0 |
 | 上下文管理 | 最近 N 条对话，按私信或频道隔离 | P1 |
 | 流式响应 | 逐步显示译文，减少等待感 | P2 |
@@ -158,4 +158,4 @@ WebCord 页面通过 preload 和 IPC 向 Electron 主进程请求翻译，Node.j
 - 原案 SDK 候选：@alicloud/dashscope-sdk，未经验证，不视为已确定依赖。
 - xikii 会员系统：需提供实时翻译模块的代码位置及可复用范围。
 
-原案模型建议：qwen-turbo 用于日常聊天，qwen-plus 用于上下文场景，qwen-max 用于复杂语境。实际效果、延迟及成本需以接入时评测为准。
+原案曾建议 qwen-turbo 用于日常聊天。阿里云已将其列入 [2026 年 10 月 10 日下线清单](https://www.aliyun.com/notice/118177)，现默认使用 qwen-flash。模型选择以当前可用性为准，翻译效果、延迟及成本需实际评测；已有配置通过设置中的明确保存操作切换。

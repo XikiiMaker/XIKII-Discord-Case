@@ -21,7 +21,7 @@ async function main() {
     fs.writeFileSync(budgetFile, JSON.stringify(budget));
     return fetch(url, init);
   });
-  const model = process.env.XIKII_QWEN_TEST_MODEL || 'qwen-turbo';
+  const model = process.env.XIKII_QWEN_TEST_MODEL || defaultTranslationSettings.model;
   const cases = [
     { name: 'English to Chinese with protected formatting', text: '**Hello!** Visit https://example.com and keep `USB-C` unchanged.', target: 'zh', context: [], streaming: false },
     { name: 'Chinese to English with context and streaming', text: '它支持蓝牙吗？', target: 'en', context: ['We are discussing the XIKII keyboard.'], streaming: true },
