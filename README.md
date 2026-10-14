@@ -14,7 +14,7 @@
 - **独立开关**：私信默认开启、频道默认关闭；须先配置 Key 并确认启用。开关固定在列表右侧，选中或悬停时不移位。
 - **简洁中文界面**：移除顶部菜单栏、预览和底部工具栏；客户端设置及提示使用简体中文，译文行距统一。
 - **直接发送**：保护 Markdown、代码、链接、提及与表情；翻译失败或草稿改变时停止自动发送。
-- **可配置的 Qwen**：自备 DashScope API Key，选择地域、模型、发送语言和流式显示。
+- **可配置的 Qwen**：自备 DashScope API Key，默认使用 `qwen-flash`，可选择地域、可用模型、发送语言和流式显示。
 - **成本控制**：译文缓存加密保存在本机，切换频道或重启客户端都不会重复翻译；另有重复请求合并、并发队列、按会话隔离的上下文。上下文默认关闭。
 - **桌面功能**：保留登录会话，可选开机启动，桌面通知设置、任务栏闪烁和托盘未读提示。
 - **备用引擎**：可选自行配置的 LibreTranslate 服务，默认关闭；见 [说明](docs/fallback.md)。
@@ -29,8 +29,10 @@
 
 1. 在 [Releases](https://github.com/XikiiMaker/XIKII-Discord-Case/releases) 下载 Windows x64 ZIP，完整解压后运行 `xikii-discord-case.exe`。也提供 EXE/MSI 安装包供测试。
 2. 登录自己的 Discord 账号。升级前请从托盘彻底退出旧版，避免单实例机制唤起旧程序。
-3. **右键频道或私信 → 翻译设置**，选择与 Key 一致的地域、模型，填写自己的 DashScope API Key，阅读并确认启用提示。托盘右键菜单也可以打开设置。
+3. **右键频道或私信 → 翻译设置**，选择与 Key 一致的地域，模型填 `qwen-flash` 或其他可用 Qwen 模型 ID，填写自己的 DashScope API Key，阅读并确认启用提示，点击「保存翻译设置」。托盘右键菜单也可以打开设置。
 4. 打开名称旁的开关，即可接收中文译文、发送英文译文；关闭后恢复普通聊天。
+
+**旧版本模型迁移：** 阿里云已将 `qwen-turbo` 列入 [2026 年 10 月 10 日下线清单](https://www.aliyun.com/notice/118177)。若旧配置仍使用它，请改为 `qwen-flash` 并保存；API Key 留空即可保留现有 Key。旧版本保存后重新打开设置，核对模型名称。源码中的新版设置提供下线提示和「改用 qwen-flash 并保存」按钮，保存结果会显示当前模型。仅修改输入框而没有保存不会生效。
 
 ![翻译设置窗口，可选择地域、模型、发送语言和上下文条数](docs/images/demo-translation-settings.png)
 
@@ -79,7 +81,7 @@ $env:WEBCORD_BUILD='release'
 npm run make -- --platform win32 --arch x64
 ```
 
-本地验证覆盖 TypeScript、47 项 Node/DOM 测试、29 项 Electron 页面场景、7 项 Slate/React 编辑器场景及跨进程会话保存。自动化使用人工数据和模拟翻译服务，不发送真实 Discord 消息。远端 CI 尚未启用，模板见 [docs/ci.yml.example](docs/ci.yml.example)。
+本地验证覆盖 TypeScript、53 项 Node/DOM 测试、32 项 Electron 页面场景、7 项 Slate/React 编辑器场景及跨进程会话保存。自动化使用人工数据和模拟翻译服务，不发送真实 Discord 消息。远端 CI 尚未启用，模板见 [docs/ci.yml.example](docs/ci.yml.example)。
 
 架构：Discord 页面 / preload → 窄接口 IPC → Electron 主进程 → 翻译队列、缓存与上下文 → Qwen / DashScope。密钥管理与网络调用集中在主进程。
 

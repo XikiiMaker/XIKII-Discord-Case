@@ -24,10 +24,16 @@ export interface TranslationState { settings: TranslationSettings; hasKey: boole
 export interface TranslationRequest { text: string; target: Language; context: string[] }
 export type Reply<T> = { ok: true; value: T } | { ok: false; error: string };
 export const defaultTranslationSettings: TranslationSettings = {
-  consent: false, dmEnabled: true, target: "en", model: "qwen-turbo", region: "china",
+  consent: false, dmEnabled: true, target: "en", model: "qwen-flash", region: "china",
   contextCount: 0, concurrency: 2, cacheSize: 500,
   showOriginal: true, streaming: false, fallback: { enabled: false, endpoint: "" }, channels: {}
 };
+/** Keep existing choices intact; explain how to replace a model with a published retirement notice. */
+export function modelRetirementNotice(model: string): string | undefined {
+  return model === "qwen-turbo"
+    ? "阿里云已公告 qwen-turbo 于 2026 年 10 月 10 日下线。请改用 qwen-flash，并保存翻译设置。"
+    : undefined;
+}
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,12 +1,13 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { TranslationEngine, needsTranslation, protectText } = require('../app/code/main/translation/engine.js');
-const { defaultTranslationSettings, parseSettings, parseRequest, conversation, ruleFor } = require('../app/code/common/translation.js');
+const { defaultTranslationSettings, parseSettings, migrateStoredSettings, parseRequest, conversation, ruleFor, modelRetirementNotice } = require('../app/code/common/translation.js');
 const config = (patch = {}) => ({ ...structuredClone(defaultTranslationSettings), consent: true, ...patch });
 const request = (text = 'Hello', patch = {}) => ({ text, target: 'zh', context: [], ...patch });
 const success = text => new Response(JSON.stringify({ choices: [{ finish_reason: 'stop', message: { content: text } }] }), { status: 200 });
 
 void test('current defaults: direct send, no context, private messages on and channels off after consent', () => {
+  assert.equal(defaultTranslationSettings.model, 'qwen-flash');
   assert.equal(Object.hasOwn(defaultTranslationSettings, 'sendMode'), false);
   assert.equal(Object.hasOwn(parseSettings(config({ sendMode: 'preview' })), 'sendMode'), false, 'legacy preview setting is discarded');
   assert.equal(defaultTranslationSettings.contextCount, 0);
@@ -14,6 +15,15 @@ void test('current defaults: direct send, no context, private messages on and ch
   assert.equal(ruleFor(config(), { id: '12', dm: true }).enabled, true);
   assert.equal(ruleFor(config(), { id: '12', dm: false }).enabled, false);
   assert.equal(ruleFor(config({ dmEnabled: false, channels: { '12': { enabled: true, target: 'ja' } } }), { id: '12', dm: true }).enabled, false);
+});
+void test('legacy model settings are retained until an explicit save, with a retirement notice', () => {
+  const legacy = config({ model: 'qwen-turbo', contextCount: 3, concurrency: 4 });
+  const migrated = migrateStoredSettings(legacy);
+  assert.equal(migrated.model, 'qwen-turbo');
+  assert.equal(migrated.contextCount, 3); assert.equal(migrated.concurrency, 4);
+  assert.match(modelRetirementNotice(migrated.model), /下线.*qwen-flash.*保存/);
+  assert.equal(modelRetirementNotice('qwen-flash'), undefined);
+  assert.equal(modelRetirementNotice('qwen-plus'), undefined);
 });
 void test('routes and input boundaries reject malformed, oversized and foreign requests', () => {
   assert.deepEqual(conversation('https://discord.com/channels/@me/123'), { id: '123', dm: true });
@@ -108,6 +118,35 @@ void test('failures are not cached and raw server errors are not exposed', async
   await assert.rejects(engine.translate(request(), config(), 'key'), error => /API Key/.test(error.message) && !error.message.includes('SECRET'));
   assert.equal(await engine.translate(request(), config(), 'key'), '你好');
   assert.equal(calls, 2);
+});
+void test('a legacy model 429 points to a model change, and changing the model recovers without caching the error', async () => {
+  const models = [];
+  const engine = new TranslationEngine(async (_url, init) => {
+    const { model } = JSON.parse(init.body); models.push(model);
+    return model === 'qwen-turbo' ? new Response(JSON.stringify({ error: { code: 'limit_requests', message: 'PRIVATE ACCOUNT DATA' } }), { status: 429 }) : success('你好');
+  });
+  await assert.rejects(engine.translate(request(), config({ model: 'qwen-turbo' }), 'key'), error => /下线.*qwen-flash.*保存/.test(error.message) && !error.message.includes('PRIVATE'));
+  assert.equal(await engine.translate(request(), config(), 'key'), '你好');
+  assert.equal(await engine.translate(request(), config(), 'key'), '你好');
+  assert.deepEqual(models, ['qwen-turbo', 'qwen-flash']);
+});
+void test('current model 429 distinguishes known causes without exposing provider messages or adding retries', async () => {
+  const cases = [
+    [{ error: { code: 'limit_requests', message: 'PRIVATE ACCOUNT DATA' } }, /HTTP 429/],
+    [{ error: { code: 'BudgetLimitExceeded', message: 'PRIVATE ACCOUNT DATA' } }, /预算/],
+    [{ code: 'Throttling.AllocationQuota', message: 'PRIVATE ACCOUNT DATA' }, /Token.*TPM\/TPS/],
+    [{ error_code: 'insufficient_quota', message: 'PRIVATE ACCOUNT DATA' }, /Token.*TPM\/TPS/],
+    [{ error: { code: 'Throttling.Concurrency', message: 'PRIVATE ACCOUNT DATA' } }, /并发/],
+    [{ error: { code: 'PRIVATE ACCOUNT DATA' } }, /HTTP 429/],
+    ['PRIVATE ACCOUNT DATA', /HTTP 429/],
+    ['x'.repeat(16_001), /HTTP 429/]
+  ];
+  await Promise.all(cases.map(async ([body, expected]) => {
+    let calls = 0;
+    const engine = new TranslationEngine(async () => { calls++; return new Response(typeof body === 'string' ? body : JSON.stringify(body), { status: 429 }); });
+    await assert.rejects(engine.translate(request(), config(), 'key'), error => expected.test(error.message) && !/PRIVATE|qwen-turbo|下线/.test(error.message));
+    assert.equal(calls, 1, 'a rejected request is not automatically retried');
+  }));
 });
 void test('truncated or malformed responses are not sent', async () => {
   const engine = new TranslationEngine(async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: 'partial' } }] })));

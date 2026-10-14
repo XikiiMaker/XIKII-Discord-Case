@@ -68,13 +68,13 @@ async function main() {
   const { defaultTranslationSettings } = require('../app/code/common/translation.js');
   const { attachTranslation } = require('../app/code/main/translation/ipc.js');
   const store = new TranslationStore();
-  store.save({ ...defaultTranslationSettings, consent: true, fallback: { enabled: false, endpoint: 'https://original.test/translate' } }, 'fixture-key-not-a-real-secret', 'fixture-fallback-key');
+  store.save({ ...defaultTranslationSettings, model: 'qwen-turbo', consent: true, fallback: { enabled: false, endpoint: 'https://original.test/translate' } }, 'fixture-key-not-a-real-secret', 'fixture-fallback-key');
   assert(!fs.readFileSync(path.resolve(profile, 'translation.json'), 'utf8').includes('fixture-key-not-a-real-secret'));
   assert(!fs.readFileSync(path.resolve(profile, 'translation.json'), 'utf8').includes('fixture-fallback-key'));
   const reopened = new TranslationStore();
   assert.equal(reopened.fallbackKey(), 'fixture-fallback-key');
   assert.equal(reopened.key(), 'fixture-key-not-a-real-secret');
-  reopened.save({ ...defaultTranslationSettings, consent: true });
+  reopened.save({ ...defaultTranslationSettings, model: 'qwen-turbo', consent: true });
   assert.equal(reopened.fallbackKey(), '', 'changing fallback destination clears its saved key');
   assert.equal(reopened.key(), 'fixture-key-not-a-real-secret', 'Qwen key is retained separately');
   const win = new BrowserWindow({ show: false, width: 1100, height: 800, webPreferences: { preload: path.resolve(__dirname, 'electron-preload.cjs'), sandbox: false, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true } });
@@ -129,6 +129,20 @@ async function main() {
   attachTranslation(settings, true);
   await settings.loadFile(path.resolve(root, 'sources/assets/web/html/settings.html'));
   await until(() => settings.webContents.executeJavaScript(`!!document.querySelector('.xikii-settings-form button')`), 'settings form');
+  assert.equal(await settings.webContents.executeJavaScript(`document.getElementById('xikii-qwen-model').value`), 'qwen-turbo', 'opening settings must retain the existing model');
+  assert.equal(await settings.webContents.executeJavaScript(`document.getElementById('xikii-qwen-model-warning').hidden`), false);
+  assert.match(await settings.webContents.executeJavaScript(`document.getElementById('xikii-qwen-model-description').textContent`), /下线.*qwen-flash.*保存/);
+  await settings.webContents.executeJavaScript(`document.querySelector('#xikii-qwen-model-warning button').click();`);
+  assert.equal(await settings.webContents.executeJavaScript(`document.getElementById('xikii-qwen-model').value`), 'qwen-turbo', 'an untrusted page click cannot change settings');
+  const beforeModelChange = JSON.parse(fs.readFileSync(path.resolve(profile, 'translation.json'), 'utf8'));
+  const replacementPoint = await settings.webContents.executeJavaScript(`(()=>{const button=document.querySelector('#xikii-qwen-model-warning button');button.scrollIntoView({block:'center'});const r=button.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};})()`);
+  settings.webContents.sendInputEvent({type:'mouseDown',button:'left',clickCount:1,...replacementPoint});
+  settings.webContents.sendInputEvent({type:'mouseUp',button:'left',clickCount:1,...replacementPoint});
+  await until(() => settings.webContents.executeJavaScript(`document.querySelector('#xikii-translation-settings [role=status]').textContent.includes('当前模型：qwen-flash')`), 'model replacement saved with explicit confirmation');
+  const afterModelChange = JSON.parse(fs.readFileSync(path.resolve(profile, 'translation.json'), 'utf8'));
+  assert.equal(afterModelChange.settings.model, 'qwen-flash');
+  assert.equal(afterModelChange.encryptedKey, beforeModelChange.encryptedKey, 'changing the model with an empty key field keeps the encrypted key');
+  assert.equal(await settings.webContents.executeJavaScript(`document.getElementById('xikii-qwen-model-warning').hidden`), true);
   assert.deepEqual(await settings.webContents.executeJavaScript(`Array.from(document.querySelector('.xikii-settings-form select').options, option => option.value)`), ['en', 'zh']);
   assert.deepEqual(await settings.webContents.executeJavaScript(`Array.from(document.querySelectorAll('[role=tabpanel]'), panel => panel.hidden)`), [false, true]);
   await settings.webContents.executeJavaScript(`document.getElementById('settings-tab-client').click();`);
@@ -155,11 +169,14 @@ async function main() {
   await wait(250);
   fs.writeFileSync(path.resolve(root, 'cache/evidence/translation-settings.png'), (await settings.webContents.capturePage()).toPNG());
   // Drive a real, trusted submit through Chromium input (no synthetic click bypass).
-  const save = await settings.webContents.executeJavaScript(`(()=>{const boxes=document.querySelectorAll('#xikii-translation-settings input[type=checkbox]');boxes[2].checked=false;boxes[3].checked=true;const button=document.querySelector('button[type=submit]');button.scrollIntoView({block:'center'});const r=button.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};})()`);
+  const save = await settings.webContents.executeJavaScript(`(()=>{const boxes=document.querySelectorAll('#xikii-translation-settings input[type=checkbox]');boxes[2].checked=false;boxes[3].checked=true;document.querySelector('#xikii-translation-settings [role=status]').textContent='';const button=document.querySelector('button[type=submit]');button.scrollIntoView({block:'center'});const r=button.getBoundingClientRect();return {x:Math.round(r.x+r.width/2),y:Math.round(r.y+r.height/2)};})()`);
   settings.webContents.sendInputEvent({ type: 'mouseDown', button: 'left', clickCount: 1, ...save });
   settings.webContents.sendInputEvent({ type: 'mouseUp', button: 'left', clickCount: 1, ...save });
   await until(() => settings.webContents.executeJavaScript(`document.querySelector('[role=status]').textContent.includes('已保存')`), 'save settings');
   await until(() => win.webContents.executeJavaScript(`document.getElementById('message-content-1001').style.display==='none' && document.querySelector('[data-xikii-translation]')?.textContent==='你好'`), 'streaming translation hides original only after completion');
+  // The earlier message is already cached under qwen-flash; exercise streaming with fresh content.
+  await win.webContents.executeJavaScript(`const streamingItem=document.createElement('li');streamingItem.id='chat-messages-123-1002';streamingItem.innerHTML='<div id="message-content-1002">Hello streaming fixture</div>';document.querySelector('ol').append(streamingItem);`);
+  await until(() => win.webContents.executeJavaScript(`document.getElementById('message-content-1002').style.display==='none' && document.getElementById('message-content-1002').nextElementSibling?.textContent==='你好'`), 'fresh incoming message uses streaming');
   await until(() => win.webContents.executeJavaScript(`document.querySelector('[data-xikii-translation-toggle]').getAttribute('aria-checked')==='true'`), 'enabled DM sidebar badge');
   await wait(250);
   await enter('你好，自动发送');
@@ -215,7 +232,7 @@ async function main() {
   assert(distances.every(gap => gap >= typography.line - 1), 'wrapped line baselines never collapse');
   win.webContents.invalidate(); await wait(200);
   fs.writeFileSync(path.resolve(root, 'cache/evidence/translation-chinese-spacing.png'), (await win.webContents.capturePage()).toPNG());
-  const output = { passed: ['encrypted-key-storage', 'incoming-render', 'direct-send-without-preview', 'settings-save', 'chinese-english-options-only', 'settings-tabs', 'desktop-notification-preferences-save', 'development-startup-disabled', 'streaming-incoming-and-outgoing', 'hide-original-after-success', 'sidebar-translation-switch', 'shortcut-toggle-restores-original', 'automatic-send-once', 'edited-draft-not-sent', 'navigation-not-sent', 'conversation-isolation', 'independent-encrypted-provider-keys', 'changed-endpoint-clears-fallback-key', 'fallback-settings-save', 'fallback-incoming-provider-label', 'fallback-automatic-send-once', 'wide-and-narrow-no-toolbar-or-composer-overlap', 'channel-switch-inline-alignment', 'non-current-channel-switch-click-without-navigation', 'wrapped-chinese-line-height', 'fixed-right-column-despite-native-actions', 'production-client-settings-chinese', 'raw-shortcut-without-api', 'failed-translation-keeps-draft'], apiCalls, streamCalls, fallbackCalls, externalNetwork: false };
+  const output = { passed: ['encrypted-key-storage', 'incoming-render', 'direct-send-without-preview', 'settings-save', 'chinese-english-options-only', 'settings-tabs', 'desktop-notification-preferences-save', 'development-startup-disabled', 'streaming-incoming-and-outgoing', 'hide-original-after-success', 'sidebar-translation-switch', 'shortcut-toggle-restores-original', 'automatic-send-once', 'edited-draft-not-sent', 'navigation-not-sent', 'conversation-isolation', 'independent-encrypted-provider-keys', 'changed-endpoint-clears-fallback-key', 'fallback-settings-save', 'fallback-incoming-provider-label', 'fallback-automatic-send-once', 'wide-and-narrow-no-toolbar-or-composer-overlap', 'channel-switch-inline-alignment', 'non-current-channel-switch-click-without-navigation', 'wrapped-chinese-line-height', 'fixed-right-column-despite-native-actions', 'production-client-settings-chinese', 'raw-shortcut-without-api', 'failed-translation-keeps-draft', 'legacy-model-settings-preserved', 'legacy-model-retirement-notice', 'model-replacement-saves-and-retains-key'], apiCalls, streamCalls, fallbackCalls, externalNetwork: false };
   fs.writeFileSync(path.resolve(root, 'cache/evidence/smoke-result.json'), JSON.stringify(output, null, 2));
   console.log(JSON.stringify(output));
   settings.destroy(); win.destroy(); app.exit(0);

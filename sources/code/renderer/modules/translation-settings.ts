@@ -1,5 +1,5 @@
 import { ipcRenderer as ipc } from "electron/renderer";
-import { languages } from "../../common/translation";
+import { languages, defaultTranslationSettings, modelRetirementNotice } from "../../common/translation";
 import type { Reply, TranslationState, TranslationSettings } from "../../common/translation";
 import { renderDesktopSettings } from "./desktop-settings";
 
@@ -57,13 +57,24 @@ export async function renderTranslationSettings() {
   const streaming = checkbox("流式显示翻译进度（完整译文校验通过后才能发送）", state.settings.streaming);
   const target = select("默认发送语言", languages, state.settings.target);
   const region = select("API 地域（必须与 Key 所属地域一致）", { china: "中国内地 · dashscope.aliyuncs.com", singapore: "新加坡 · dashscope-intl.aliyuncs.com", us: "美国 · dashscope-us.aliyuncs.com" }, state.settings.region);
-  const model = text("模型（qwen-turbo / qwen-plus / qwen-max 或可用 Qwen 模型 ID）", state.settings.model);
-  model.required = true;
+  const model = text("模型（默认 qwen-flash，也可填写可用 Qwen 模型 ID）", state.settings.model);
+  model.required = true; model.id = "xikii-qwen-model";
+  const modelWarning = document.createElement("div"); modelWarning.id = "xikii-qwen-model-warning";
+  const modelDescription = document.createElement("p"); modelDescription.id = "xikii-qwen-model-description";
+  model.setAttribute("aria-describedby", modelDescription.id);
+  const replaceModel = document.createElement("button"); replaceModel.type = "button";
+  replaceModel.textContent = `改用 ${defaultTranslationSettings.model} 并保存`;
+  modelWarning.append(modelDescription, replaceModel); form.append(modelWarning);
+  function refreshModelWarning() {
+    const warning = modelRetirementNotice(model.value.trim());
+    modelWarning.hidden = !warning; modelDescription.textContent = warning ?? "";
+  }
+  model.addEventListener("input", refreshModelWarning); refreshModelWarning();
   const key = text("DashScope API Key（留空保留现有 Key）", "", "password"); key.autocomplete = "off";
   key.placeholder = state.hasKey ? "已安全保存" : "尚未配置"; key.disabled = !state.encryptionAvailable;
   const context = text("上下文条数（0 = 关闭，最多 10）", String(state.settings.contextCount), "number"); context.min = "0"; context.max = "10";
   const concurrency = text("并发请求（1–4）", String(state.settings.concurrency), "number"); concurrency.min = "1"; concurrency.max = "4";
-  const cache = text("内存缓存条数（0–2000，30 分钟过期）", String(state.settings.cacheSize), "number"); cache.min = "0"; cache.max = "2000";
+  const cache = text("内存缓存条数（0–2000；Qwen 译文加密保存 7 天）", String(state.settings.cacheSize), "number"); cache.min = "0"; cache.max = "2000";
   const fallbackHeading = document.createElement("h2"); fallbackHeading.textContent = "备用翻译 · LibreTranslate"; form.append(fallbackHeading);
   const fallbackNotice = document.createElement("p");
   fallbackNotice.textContent = "启用后，Qwen 失败时将当前待译消息发送至你填写的服务，不发送最近对话。链接、代码和提及会保留。备用译文缓存 1 分钟，不支持流式输出；更换服务地址后需重新填写其 Key。";
@@ -82,7 +93,7 @@ export async function renderTranslationSettings() {
   let saving = false;
   async function persist(removeKey?: "qwen" | "fallback") {
     if (saving) return;
-    saving = true; save.disabled = remove.disabled = removeFallback.disabled = true;
+    saving = true; save.disabled = remove.disabled = removeFallback.disabled = replaceModel.disabled = true;
     try {
       const settings: TranslationSettings = { ...state.settings, consent: consent.checked, dmEnabled: dm.checked,
         target: target.value as TranslationSettings['target'],
@@ -96,10 +107,15 @@ export async function renderTranslationSettings() {
       if (!result.ok) throw new Error(result.error);
       state = result.value; key.value = ""; key.placeholder = state.hasKey ? "已安全保存" : "尚未配置";
       fallbackKey.value = ""; fallbackKey.placeholder = state.hasFallbackKey ? "已安全保存" : "未配置（服务可能无需 Key）";
-      status.textContent = removeKey ? (removeKey === "qwen" ? "Qwen Key 已删除。" : "备用 Key 已删除。") : "设置已保存，立即生效。";
+      refreshModelWarning();
+      status.textContent = removeKey ? (removeKey === "qwen" ? "Qwen Key 已删除。" : "备用 Key 已删除。") : `设置已保存，当前模型：${state.settings.model}，立即生效。`;
     } catch (error) { status.textContent = error instanceof Error ? error.message : "保存失败。"; }
-    finally { saving = false; save.disabled = remove.disabled = removeFallback.disabled = false; }
+    finally { saving = false; save.disabled = remove.disabled = removeFallback.disabled = replaceModel.disabled = false; }
   }
+  replaceModel.addEventListener("click", (event) => {
+    if (!event.isTrusted || saving || !form.reportValidity()) return;
+    model.value = defaultTranslationSettings.model; refreshModelWarning(); void persist();
+  });
   form.addEventListener("submit", (event) => { event.preventDefault(); if (event.isTrusted) void persist(); });
   remove.addEventListener("click", (event) => { if (event.isTrusted) void persist("qwen"); });
   removeFallback.addEventListener("click", (event) => { if (event.isTrusted) void persist("fallback"); });

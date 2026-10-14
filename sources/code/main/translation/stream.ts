@@ -1,7 +1,7 @@
 import { isRecord } from "../../common/translation";
 
 /** Bound provider JSON before parsing, including responses without Content-Length. */
-export async function readBoundedJson(response: Response): Promise<unknown> {
+export async function readBoundedJson(response: Response, maximumBytes = 256_000): Promise<unknown> {
   if (!response.body) throw new Error("翻译服务返回空白内容。");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -13,7 +13,7 @@ export async function readBoundedJson(response: Response): Promise<unknown> {
       const chunk = await reader.read();
       if (chunk.done) break;
       bytes += chunk.value.byteLength;
-      if (bytes > 256_000) throw new Error("翻译服务响应超过大小限制，原文已保留。");
+      if (bytes > maximumBytes) throw new Error("翻译服务响应超过大小限制，原文已保留。");
       text += decoder.decode(chunk.value, { stream: true });
     }
     return JSON.parse(text + decoder.decode()) as unknown;
